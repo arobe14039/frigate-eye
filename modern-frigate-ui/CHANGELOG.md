@@ -1,6 +1,20 @@
 # Changelog
 
+## 0.1.2
+
+- Rebuilt live playback: go2rtc is now discovered explicitly (direct port 1984,
+  falling back to Frigate's `/live/*` proxy) and every relay logs its upstream
+  URL, open/close codes and errors.
+- WebRTC now trickles ICE candidates and reports connection state, which fixes
+  streams that silently never started.
+- MSE waits for `sourceopen`, negotiates only codecs this browser can decode,
+  and trims its buffer to stay light on mobile.
+- HLS plays in every browser through hls.js in low-latency mode; go2rtc segment
+  requests are proxied correctly instead of returning 503.
+- Added an MJPEG fallback between HLS and static preview frames.
+
 ## 0.1.1
+
 
 - Fixed "Test connection" returning *unsupported media type* by accepting POSTs
   without a parseable content-type.
