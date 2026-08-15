@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   ChevronLeft,
   Download,
+  Loader2,
   Maximize2,
   MoreVertical,
   Pause,
@@ -16,9 +17,27 @@ import { api, recordingFrameUrl } from "../../services/api";
 import type { DetectionEvent, Preferences } from "../../types";
 import { clockTime, durationLabel, titleCase } from "../../utils/format";
 import { Timeline, ZOOM_WINDOWS } from "../timeline/Timeline";
-import { LivePlayer } from "./LivePlayer";
+import { LivePlayer, type LiveStatus } from "./LivePlayer";
 
 const SPEEDS = [0.5, 1, 2, 4];
+
+const STREAM_LABELS: Record<LiveStatus["kind"], string> = {
+  webrtc: "WebRTC",
+  mse: "MSE",
+  hls: "HLS",
+  mjpeg: "MJPEG",
+  preview: "Preview",
+};
+
+/** Map the decoded height onto the nearest familiar quality tier. */
+function qualityLabel(height: number) {
+  if (height >= 2000) return "4K";
+  if (height >= 1300) return "1440p";
+  if (height >= 1000) return "1080p";
+  if (height >= 680) return "720p";
+  if (height >= 460) return "480p";
+  return `${height}p`;
+}
 
 export function CameraViewer({
   cameraId,
@@ -43,7 +62,10 @@ export function CameraViewer({
   const [speed, setSpeed] = useState(1);
   const [menuOpen, setMenuOpen] = useState(false);
   const [selected, setSelected] = useState<DetectionEvent | null>(null);
-  const [streamMessage, setStreamMessage] = useState<string | undefined>();
+  const [streamStatus, setStreamStatus] = useState<LiveStatus>({
+    kind: "preview",
+    phase: "connecting",
+  });
   const shellRef = useRef<HTMLDivElement | null>(null);
 
   const camera = useQuery({
@@ -123,7 +145,7 @@ export function CameraViewer({
             cameraId={cameraId}
             streams={streams}
             muted={muted}
-            onStatus={(status) => setStreamMessage(status.message)}
+            onStatus={setStreamStatus}
           />
         ) : (
           <img
@@ -154,10 +176,33 @@ export function CameraViewer({
           )}
         </div>
 
-        {streamMessage && live ? (
-          <p className="absolute inset-x-0 bottom-0 bg-background/70 px-3 py-2 text-center text-[12px] text-muted backdrop-blur">
-            Live stream unavailable — showing latest preview
-          </p>
+        {live && streamStatus.phase === "playing" ? (
+          <span className="absolute right-3 bottom-3 flex items-center gap-1.5 rounded-pill bg-background/65 px-2.5 py-1 text-[11px] font-medium text-foreground backdrop-blur">
+            <span className="font-semibold tracking-wide uppercase">
+              {STREAM_LABELS[streamStatus.kind]}
+            </span>
+            {streamStatus.height ? (
+              <span className="text-muted">{qualityLabel(streamStatus.height)}</span>
+            ) : null}
+          </span>
+        ) : null}
+
+        {live && streamStatus.phase !== "playing" ? (
+          <div className="absolute inset-0 grid place-items-center bg-background/45 backdrop-blur-[2px]">
+            <div className="flex flex-col items-center gap-2.5">
+              <Loader2 className="size-7 animate-spin text-accent" />
+              <p className="text-[12px] text-muted">
+                {streamStatus.phase === "failed"
+                  ? "Live stream unavailable — showing latest preview"
+                  : `Connecting ${STREAM_LABELS[streamStatus.kind]} stream…`}
+              </p>
+              {streamStatus.message && streamStatus.phase !== "failed" ? (
+                <p className="max-w-[70%] text-center text-[11px] text-subtle">
+                  {streamStatus.message} — retrying
+                </p>
+              ) : null}
+            </div>
+          </div>
         ) : null}
       </div>
 
