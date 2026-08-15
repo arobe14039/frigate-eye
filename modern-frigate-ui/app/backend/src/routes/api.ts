@@ -126,8 +126,12 @@ export async function registerApi(app: FastifyInstance) {
       streamCount: go2rtc.streamCount,
       go2rtcStreams: go2rtc.streams,
       cameraStreams: streams,
+      go2rtcSuggestion: await buildGo2rtcSuggestion(
+        streams.filter((entry) => !entry.matched).map((entry) => entry.camera),
+      ),
     };
   });
+
 
   app.post("/api/status/test", async () => {
     const base = await resolveFrigateBase(true);
