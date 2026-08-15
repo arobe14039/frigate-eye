@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { CheckCircle2, ExternalLink, XCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ExternalLink, XCircle } from "lucide-react";
 import { useState } from "react";
 import { Chip } from "../../components/primitives";
 import { api, isDemoMode } from "../../services/api";
@@ -77,6 +77,10 @@ export function SettingsScreen({
           </p>
         ) : null}
       </Group>
+
+      <PortsGroup />
+
+
 
       <Group title="Interface">
         <Setting label="Camera grid">
@@ -179,5 +183,78 @@ function Setting({ label, children }: { label: string; children: React.ReactNode
       <p className="mb-2.5 text-[14px] text-muted">{label}</p>
       <div className="no-scrollbar flex gap-2 overflow-x-auto">{children}</div>
     </div>
+  );
+}
+
+/**
+ * Ports & live streaming: shows which internal ports the add-on needs, whether
+ * they answer, and whether each camera maps to a go2rtc stream (the usual
+ * reason live video silently falls back to preview frames).
+ */
+function PortsGroup() {
+  const diagnostics = useQuery({
+    queryKey: ["diagnostics"],
+    queryFn: api.diagnostics,
+    refetchInterval: 60_000,
+  });
+  const data = diagnostics.data;
+  const unmatched = data?.cameraStreams.filter((entry) => !entry.matched) ?? [];
+
+  return (
+    <Group title="Ports & live streaming">
+      {(data?.ports ?? []).map((port) => (
+        <Row
+          key={port.port}
+          label={`${port.label} · ${port.port}`}
+          value={
+            <span className="flex items-center gap-1.5">
+              {port.ok ? (
+                <CheckCircle2 className="size-4 text-online" />
+              ) : port.required ? (
+                <XCircle className="size-4 text-live" />
+              ) : (
+                <AlertTriangle className="size-4 text-detect" />
+              )}
+              {port.ok ? "Open" : port.required ? "Unreachable" : "Closed"}
+            </span>
+          }
+        />
+      ))}
+      <Row
+        label="Live path"
+        value={
+          data?.liveVia === "go2rtc-direct"
+            ? "go2rtc direct"
+            : data?.liveVia === "frigate-proxy"
+              ? "Frigate proxy"
+              : "—"
+        }
+      />
+      <Row label="go2rtc streams" value={String(data?.streamCount ?? 0)} />
+      <Row
+        label="Cameras with a live stream"
+        value={`${(data?.cameraStreams.length ?? 0) - unmatched.length} / ${data?.cameraStreams.length ?? 0}`}
+      />
+      <button
+        type="button"
+        onClick={() => void diagnostics.refetch()}
+        className="mt-3 h-11 w-full rounded-2xl bg-surface-2 text-[14px] font-medium"
+      >
+        {diagnostics.isFetching ? "Checking…" : "Re-check ports"}
+      </button>
+      {data && data.streamCount === 0 ? (
+        <p className="mt-2 text-[12.5px] text-detect">
+          go2rtc has no streams for your cameras, so WebRTC and MSE cannot start. Add each camera
+          under <span className="font-medium">go2rtc → streams</span> in your Frigate config (and
+          keep port 1984 enabled) for low-latency video. Until then playback uses Frigate&rsquo;s own
+          MJPEG feed.
+        </p>
+      ) : null}
+      {data && data.streamCount > 0 && unmatched.length ? (
+        <p className="mt-2 text-[12.5px] text-detect">
+          No go2rtc stream matches: {unmatched.map((entry) => entry.camera).join(", ")}.
+        </p>
+      ) : null}
+    </Group>
   );
 }

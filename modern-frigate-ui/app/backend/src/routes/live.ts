@@ -1,19 +1,28 @@
 import type { FastifyInstance } from "fastify";
 import WebSocket from "ws";
 import { resolveFrigateBase } from "../services/frigate/client.js";
-import { resolveGo2rtc } from "../services/frigate/go2rtc.js";
+import { resolveGo2rtc, resolveStreamName } from "../services/frigate/go2rtc.js";
 
 /**
  * Live streaming adapter. go2rtc (bundled with Frigate) is reached only from
  * this container; the browser talks to relative `api/live/*` paths that work
  * unchanged behind Home Assistant Ingress.
+ *
+ * The `:stream` parameter is the Frigate camera name — the matching go2rtc
+ * stream name is resolved here against go2rtc's live stream list, because a
+ * mismatch is what makes go2rtc answer 404 for every request.
  */
 export async function registerLive(app: FastifyInstance) {
   /** Upstream websocket URL for a signalling mode. */
-  const upstreamWsUrl = async (mode: "webrtc" | "mse", src: string) => {
+  const upstreamWsUrl = async (mode: "webrtc" | "mse", camera: string) => {
     const target = await resolveGo2rtc();
     if (!target) return null;
-    const query = `?src=${encodeURIComponent(src)}`;
+    const { name, matched } = await resolveStreamName(camera);
+    if (!matched) {
+      app.log.warn({ mode, camera, tried: name }, "live relay: no matching go2rtc stream");
+      return null;
+    }
+    const query = `?src=${encodeURIComponent(name)}`;
     if (target.via === "go2rtc-direct") return `${target.ws}${query}`;
     const base = await resolveFrigateBase();
     if (!base) return null;
@@ -66,27 +75,45 @@ export async function registerLive(app: FastifyInstance) {
   app.get("/api/live/:stream/webrtc", { websocket: true }, relay("webrtc"));
   app.get("/api/live/:stream/mse", { websocket: true }, relay("mse"));
 
-  /** Proxy a go2rtc HTTP endpoint, streaming the body through untouched. */
-  const proxyGo2rtc = async (path: string, reply: any, log: Record<string, unknown>) => {
+  /** Stream an upstream response body through untouched. */
+  const pipe = async (url: string, reply: any, log: Record<string, unknown>) => {
+    try {
+      const upstream = await fetch(url, { headers: { accept: "*/*" } });
+      if (!upstream.ok || !upstream.body) {
+        app.log.warn({ ...log, url, status: upstream.status }, "live http: upstream rejected");
+        return null;
+      }
+      reply.header(
+        "content-type",
+        upstream.headers.get("content-type") ?? "application/octet-stream",
+      );
+      reply.header("cache-control", "no-store");
+      return reply.send(upstream.body);
+    } catch (error) {
+      app.log.error({ ...log, url, err: (error as Error).message }, "live http: proxy failed");
+      return null;
+    }
+  };
+
+  /** Proxy a go2rtc HTTP endpoint for a camera, resolving its stream name. */
+  const proxyGo2rtc = async (
+    camera: string,
+    build: (src: string) => string,
+    reply: any,
+    log: Record<string, unknown>,
+  ) => {
     const target = await resolveGo2rtc();
     if (!target) {
       app.log.warn(log, "live http: go2rtc not reachable");
       return reply.code(503).send({ error: "go2rtc_unavailable" });
     }
-    const url = `${target.http}${path}`;
-    try {
-      const upstream = await fetch(url, { headers: { accept: "*/*" } });
-      if (!upstream.ok || !upstream.body) {
-        app.log.warn({ ...log, url, status: upstream.status }, "live http: upstream rejected");
-        return reply.code(502).send({ error: "stream_unavailable", status: upstream.status });
-      }
-      reply.header("content-type", upstream.headers.get("content-type") ?? "application/octet-stream");
-      reply.header("cache-control", "no-store");
-      return reply.send(upstream.body);
-    } catch (error) {
-      app.log.error({ ...log, url, err: (error as Error).message }, "live http: proxy failed");
-      return reply.code(503).send({ error: "stream_unavailable" });
+    const { name, matched } = await resolveStreamName(camera);
+    if (!matched) {
+      app.log.warn({ ...log, tried: name }, "live http: no matching go2rtc stream");
+      return reply.code(503).send({ error: "stream_not_configured" });
     }
+    const sent = await pipe(`${target.http}${build(encodeURIComponent(name))}`, reply, log);
+    return sent ?? reply.code(502).send({ error: "stream_unavailable" });
   };
 
   // HLS: `index.m3u8` is the playlist; go2rtc's relative segment URIs resolve
@@ -95,21 +122,58 @@ export async function registerLive(app: FastifyInstance) {
     "/api/live/:stream/hls/*",
     async (request, reply) => {
       const rest = (request.params as any)["*"] || "";
-      const search = request.url.includes("?") ? request.url.slice(request.url.indexOf("?") + 1) : "";
-      const src = encodeURIComponent(request.params.stream);
-      const path =
-        !rest || rest.endsWith("index.m3u8")
-          ? `/stream.m3u8?src=${src}&mp4`
-          : `/${rest}${search ? `?${search}` : ""}`;
-      return proxyGo2rtc(path, reply, { kind: "hls", stream: request.params.stream, rest });
+      const search = request.url.includes("?")
+        ? request.url.slice(request.url.indexOf("?") + 1)
+        : "";
+      const log = { kind: "hls", stream: request.params.stream, rest };
+      if (rest && !rest.endsWith("index.m3u8")) {
+        const target = await resolveGo2rtc();
+        if (!target) return reply.code(503).send({ error: "go2rtc_unavailable" });
+        const sent = await pipe(
+          `${target.http}/${rest}${search ? `?${search}` : ""}`,
+          reply,
+          log,
+        );
+        return sent ?? reply.code(502).send({ error: "stream_unavailable" });
+      }
+      return proxyGo2rtc(
+        request.params.stream,
+        (src) => `/stream.m3u8?src=${src}&mp4`,
+        reply,
+        log,
+      );
     },
   );
 
-  // MJPEG: universal last-resort video path — plays in every browser.
-  app.get<{ Params: { stream: string } }>("/api/live/:stream/mjpeg", async (request, reply) =>
-    proxyGo2rtc(`/stream.mjpeg?src=${encodeURIComponent(request.params.stream)}`, reply, {
-      kind: "mjpeg",
-      stream: request.params.stream,
-    }),
+  // MJPEG: universal last-resort video path — plays in every browser. go2rtc is
+  // tried first; when no go2rtc stream exists we use Frigate's own MJPEG feed,
+  // which is always available for an enabled camera.
+  app.get<{ Params: { stream: string }; Querystring: { fps?: string } }>(
+    "/api/live/:stream/mjpeg",
+    async (request, reply) => {
+      const camera = request.params.stream;
+      const fps = Math.min(Math.max(Number(request.query.fps ?? 5) || 5, 1), 15);
+      const log = { kind: "mjpeg", stream: camera };
+      const target = await resolveGo2rtc();
+      if (target) {
+        const { name, matched } = await resolveStreamName(camera);
+        if (matched) {
+          const sent = await pipe(
+            `${target.http}/stream.mjpeg?src=${encodeURIComponent(name)}`,
+            reply,
+            log,
+          );
+          if (sent) return sent;
+        }
+      }
+      const base = await resolveFrigateBase();
+      if (!base) return reply.code(503).send({ error: "frigate_unavailable" });
+      const sent = await pipe(
+        `${base}/api/${encodeURIComponent(camera)}?fps=${fps}`,
+        reply,
+        { ...log, via: "frigate-mjpeg" },
+      );
+      return sent ?? reply.code(502).send({ error: "stream_unavailable" });
+    },
   );
 }

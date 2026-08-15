@@ -7,7 +7,7 @@ export const config = {
   previewRefreshSeconds: Number(process.env["PREVIEW_REFRESH_SECONDS"] ?? 6),
   /** Optional user override from the add-on options. */
   configuredFrigateUrl: (process.env["FRIGATE_URL"] ?? "").trim() || null,
-  version: "0.1.2",
+  version: "0.1.3",
 };
 
 /**
