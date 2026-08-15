@@ -1,4 +1,4 @@
-import { demo } from "./demoData";
+import { demo, demoImageFor } from "./demoData";
 import type {
   AppStatus,
   Camera,
@@ -28,27 +28,65 @@ export const socketUrl = (path: string) => {
   return url.toString();
 };
 
+/**
+ * Backend reachability is probed once. Until it answers, media URLs resolve to
+ * bundled demo frames so the UI never fires requests we know will fail (the
+ * design preview has no add-on backend behind it).
+ */
+let backendUp: boolean | null = null;
+let probe: Promise<boolean> | null = null;
+
+const probeBackend = () => {
+  probe ??= fetch(apiUrl("api/status"), { headers: { accept: "application/json" } })
+    .then((response) => response.ok && response.headers.get("content-type")?.includes("json") === true)
+    .catch(() => false)
+    .then((ok) => {
+      backendUp = ok;
+      demoMode = !ok;
+      return ok;
+    });
+  return probe;
+};
+
 /** Media URLs always point at our own backend, never at Frigate. */
 export const cameraPreviewUrl = (cameraId: string, height = 360, bust?: number) =>
-  apiUrl(`api/cameras/${encodeURIComponent(cameraId)}/preview?h=${height}${bust ? `&t=${bust}` : ""}`);
+  backendUp !== true
+    ? demoImageFor(cameraId)
+    : apiUrl(`api/cameras/${encodeURIComponent(cameraId)}/preview?h=${height}${bust ? `&t=${bust}` : ""}`);
 
-export const eventThumbnailUrl = (eventId: string) =>
-  apiUrl(`api/events/${encodeURIComponent(eventId)}/thumbnail`);
+export const eventThumbnailUrl = (eventId: string, camera?: string) =>
+  backendUp !== true
+    ? demoImageFor(camera ?? "")
+    : apiUrl(`api/events/${encodeURIComponent(eventId)}/thumbnail`);
 
-export const eventSnapshotUrl = (eventId: string) =>
-  apiUrl(`api/events/${encodeURIComponent(eventId)}/snapshot`);
+export const eventSnapshotUrl = (eventId: string, camera?: string) =>
+  backendUp !== true
+    ? demoImageFor(camera ?? "")
+    : apiUrl(`api/events/${encodeURIComponent(eventId)}/snapshot`);
 
 export const recordingFrameUrl = (cameraId: string, timestamp: number) =>
-  apiUrl(`api/recordings/${encodeURIComponent(cameraId)}/frame/${Math.floor(timestamp)}`);
+  backendUp !== true
+    ? demoImageFor(cameraId)
+    : apiUrl(`api/recordings/${encodeURIComponent(cameraId)}/frame/${Math.floor(timestamp)}`);
 
 let demoMode = false;
 export const isDemoMode = () => demoMode;
 
+/** Resolves false when no add-on backend is behind this page. */
+export const backendReachable = () => probeBackend();
+
 async function getJson<T>(path: string, fallback: () => T): Promise<T> {
+  // Never issue the real request when the probe already told us there is no
+  // backend: that would produce a stream of failed requests per screen.
+  if (!(await probeBackend())) {
+    demoMode = true;
+    return fallback();
+  }
   try {
     const response = await fetch(apiUrl(path), { headers: { accept: "application/json" } });
     if (!response.ok) throw new Error(String(response.status));
     demoMode = false;
+    backendUp = true;
     return (await response.json()) as T;
   } catch {
     // No backend reachable (design preview, or add-on still starting):
@@ -61,6 +99,8 @@ async function getJson<T>(path: string, fallback: () => T): Promise<T> {
 export const api = {
   status: () => getJson<AppStatus>("api/status", demo.status),
   testConnection: async () => {
+    probe = null;
+    if (!(await probeBackend())) return { connected: false, error: "Backend unreachable" };
     try {
       const response = await fetch(apiUrl("api/status/test"), { method: "POST" });
       return (await response.json()) as { connected: boolean; error?: string };

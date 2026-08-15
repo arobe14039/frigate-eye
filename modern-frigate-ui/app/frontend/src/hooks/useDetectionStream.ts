@@ -1,6 +1,6 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import { apiUrl } from "../services/api";
+import { apiUrl, backendReachable } from "../services/api";
 import type { DetectionEvent } from "../types";
 
 /**
@@ -14,13 +14,21 @@ export function useDetectionStream() {
   useEffect(() => {
     if (typeof EventSource === "undefined") return;
     let source: EventSource | null = null;
-    try {
-      source = new EventSource(apiUrl("api/stream/events"));
-    } catch {
-      return;
-    }
+    let cancelled = false;
 
-    source.addEventListener("detection", (message) => {
+    // Only open the stream once we know a backend is there; otherwise the
+    // design preview would retry a failing SSE connection forever.
+    void backendReachable().then((reachable) => {
+      if (!reachable || cancelled) return;
+      try {
+        source = new EventSource(apiUrl("api/stream/events"));
+      } catch {
+        return;
+      }
+      attach(source);
+    });
+
+    const attach = (stream: EventSource) => stream.addEventListener("detection", (message) => {
       try {
         const event = JSON.parse((message as MessageEvent).data) as DetectionEvent;
         setActiveCameras((previous) => ({ ...previous, [event.camera]: Date.now() }));
@@ -30,7 +38,10 @@ export function useDetectionStream() {
       }
     });
 
-    return () => source?.close();
+    return () => {
+      cancelled = true;
+      source?.close();
+    };
   }, [queryClient]);
 
   useEffect(() => {
