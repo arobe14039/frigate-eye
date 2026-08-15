@@ -97,7 +97,8 @@ export async function registerLive(app: FastifyInstance) {
       );
       reply.header("cache-control", "no-store");
       started = true;
-      return reply.send(Readable.fromWeb(upstream.body as any));
+      reply.send(Readable.fromWeb(upstream.body as any));
+      return reply;
     } catch (error) {
       app.log.error({ ...log, url, err: (error as Error).message }, "live http: proxy failed");
       // Never fall through to another send once the reply has been handed a body.
