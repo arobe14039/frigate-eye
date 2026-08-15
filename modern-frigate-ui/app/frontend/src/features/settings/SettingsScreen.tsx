@@ -199,6 +199,8 @@ function PortsGroup() {
   });
   const data = diagnostics.data;
   const unmatched = data?.cameraStreams.filter((entry) => !entry.matched) ?? [];
+  const suggestion = data?.go2rtcSuggestion;
+  const [copied, setCopied] = useState<string | null>(null);
 
   return (
     <Group title="Ports & live streaming">
