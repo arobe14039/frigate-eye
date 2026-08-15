@@ -84,7 +84,23 @@ export const demo = {
       streamName: camera.id,
       matched: false,
     })),
+    go2rtcSuggestion: {
+      cameras: DEMO_CAMERAS.map((camera) => ({
+        camera: camera.id,
+        url: "rtsp://USER:PASSWORD@CAMERA_IP:554/stream",
+      })),
+      yaml: [
+        "go2rtc:",
+        "  streams:",
+        ...DEMO_CAMERAS.flatMap((camera) => [
+          `    ${camera.id}:`,
+          "      - rtsp://USER:PASSWORD@CAMERA_IP:554/stream",
+        ]),
+      ].join("\n"),
+      complete: false,
+    },
   }),
+
   cameras: (): Camera[] =>
 
     DEMO_CAMERAS.map((camera, index) => ({
