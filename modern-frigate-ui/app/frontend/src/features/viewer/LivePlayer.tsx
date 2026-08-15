@@ -278,7 +278,7 @@ export function LivePlayer({
         maxBufferLength: 6,
         liveSyncDurationCount: 2,
       } as any);
-      hls.on(Hls.Events.ERROR, (_event, data) => {
+      hls.on(Hls.Events.ERROR, (_event: unknown, data: any) => {
         console.warn("[live] hls error", data.type, data.details);
         if (data.fatal) fallback(`HLS error (${data.details})`);
       });
