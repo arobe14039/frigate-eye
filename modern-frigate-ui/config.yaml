@@ -1,0 +1,41 @@
+name: "Modern Frigate UI"
+version: "0.1.0"
+slug: "modern_frigate_ui"
+description: "A beautiful mobile-first interface for Frigate NVR"
+url: "https://github.com/REPLACE_ME/modern-frigate-ui"
+image: null
+startup: application
+boot: auto
+init: false
+
+arch:
+  - amd64
+  - aarch64
+
+ingress: true
+ingress_port: 8099
+ingress_stream: true
+
+panel_icon: mdi:cctv
+panel_title: Cameras
+panel_admin: false
+
+homeassistant_api: true
+hassio_api: true
+hassio_role: default
+
+watchdog: "http://[HOST]:[PORT:8099]/health"
+
+map:
+  - type: share
+    read_only: true
+
+options:
+  frigate_url: ""
+  log_level: info
+  preview_refresh_seconds: 6
+
+schema:
+  frigate_url: "str?"
+  log_level: "list(trace|debug|info|warning|error|fatal)"
+  preview_refresh_seconds: "int(2,60)"

@@ -1,0 +1,138 @@
+@import "tailwindcss";
+
+/*
+ * Modern Frigate UI design system.
+ * Dark-only, near-black surfaces, restrained cyan accent, amber for detections.
+ * Components never hardcode raw colors — they use these tokens.
+ */
+@theme {
+  --color-background: oklch(0.16 0.008 250);
+  --color-surface: oklch(0.205 0.009 250);
+  --color-surface-2: oklch(0.245 0.011 250);
+  --color-hairline: oklch(0.31 0.012 250);
+  --color-foreground: oklch(0.97 0.004 250);
+  --color-muted: oklch(0.68 0.014 250);
+  --color-subtle: oklch(0.55 0.014 250);
+  --color-accent: oklch(0.78 0.11 205);
+  --color-accent-soft: oklch(0.42 0.06 205);
+  --color-detect: oklch(0.82 0.14 78);
+  --color-live: oklch(0.66 0.2 22);
+  --color-online: oklch(0.78 0.15 155);
+
+  --radius-card: 1.25rem;
+  --radius-pill: 999px;
+
+  --shadow-lift: 0 1px 0 0 oklch(1 0 0 / 0.05) inset, 0 18px 40px -24px oklch(0 0 0 / 0.9);
+
+  --ease-smooth: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@layer base {
+  html {
+    background-color: var(--color-background);
+    color-scheme: dark;
+  }
+
+  body {
+    margin: 0;
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family:
+      -apple-system, BlinkMacSystemFont, "SF Pro Display", "Inter", "Segoe UI", system-ui,
+      sans-serif;
+    -webkit-font-smoothing: antialiased;
+    overscroll-behavior-y: none;
+  }
+
+  * {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  button {
+    font: inherit;
+    color: inherit;
+  }
+}
+
+@utility safe-top {
+  padding-top: max(env(safe-area-inset-top), 0.75rem);
+}
+
+@utility safe-bottom {
+  padding-bottom: max(env(safe-area-inset-bottom), 0.5rem);
+}
+
+@utility card-surface {
+  background-color: var(--color-surface);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-lift);
+}
+
+@utility skeleton {
+  background: linear-gradient(
+    100deg,
+    var(--color-surface) 20%,
+    var(--color-surface-2) 40%,
+    var(--color-surface) 60%
+  );
+  background-size: 220% 100%;
+  animation: shimmer 1.6s var(--ease-smooth) infinite;
+}
+
+@keyframes shimmer {
+  from {
+    background-position: 160% 0;
+  }
+  to {
+    background-position: -60% 0;
+  }
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@utility animate-rise {
+  animation: rise 0.32s var(--ease-smooth) both;
+}
+
+@keyframes sheet-up {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: none;
+  }
+}
+
+@utility animate-sheet {
+  animation: sheet-up 0.28s var(--ease-smooth) both;
+}
+
+@keyframes pulse-dot {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@utility animate-pulse-dot {
+  animation: pulse-dot 1.8s ease-in-out infinite;
+}
+
+@utility no-scrollbar {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}

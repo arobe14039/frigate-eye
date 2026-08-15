@@ -1,0 +1,13 @@
+configuration:
+  frigate_url:
+    name: Frigate URL
+    description: >-
+      Optional. Internal URL of your Frigate instance, e.g.
+      http://ccab4aaf-frigate:5000. Leave empty for automatic discovery.
+  log_level:
+    name: Log level
+    description: Verbosity of the add-on log.
+  preview_refresh_seconds:
+    name: Preview refresh interval
+    description: How often lightweight camera previews refresh on the home screen.
+network: {}
