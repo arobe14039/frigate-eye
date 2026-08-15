@@ -2,7 +2,8 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { config } from "../config.js";
 import { getCamera, listCameras, listLabels, getFrigateStats } from "../services/frigate/cameras.js";
-import { frigateMeta, resolveFrigateBase, frigateJson } from "../services/frigate/client.js";
+import { frigateMeta, resolveFrigateBase, frigateFetch } from "../services/frigate/client.js";
+import { go2rtcDiagnostics, resolveStreamName } from "../services/frigate/go2rtc.js";
 import { getEvent, listEvents } from "../services/frigate/events.js";
 import { requestExport } from "../services/frigate/exports.js";
 import { streamOptions } from "../services/frigate/live.js";
@@ -41,6 +42,26 @@ export async function registerApi(app: FastifyInstance) {
 
   app.get("/api/health", async () => ({ status: "ok", version: config.version }));
 
+  /** Frigate reports its version as plain text, not JSON. */
+  const frigateVersion = async () =>
+    frigateFetch("/api/version")
+      .then((res) => res.text())
+      .then((text) => text.replace(/["\s]/g, "") || undefined)
+      .catch(() => undefined);
+
+  /** Total detection fps across detectors, with a top-level stats fallback. */
+  const detectionFps = (stats: any): number | undefined => {
+    if (!stats) return undefined;
+    const detectors = Object.values<any>(stats.detectors ?? {});
+    const summed = detectors.reduce((sum, d) => sum + Number(d?.detection_fps ?? 0), 0);
+    if (summed > 0) return summed;
+    const cameras = Object.values<any>(stats.cameras ?? {});
+    const cameraSum = cameras.reduce((sum, c) => sum + Number(c?.detection_fps ?? 0), 0);
+    if (cameraSum > 0) return cameraSum;
+    const top = Number(stats.detection_fps ?? 0);
+    return top > 0 ? top : undefined;
+  };
+
   app.get("/api/status", async () => {
     const base = await resolveFrigateBase();
     const meta = frigateMeta();
@@ -49,29 +70,62 @@ export async function registerApi(app: FastifyInstance) {
     let detectorFps: number | undefined;
 
     if (base) {
-      version = await frigateJson<string>("/api/version").catch(() => undefined);
+      version = await frigateVersion();
       const cameras = await listCameras().catch(() => []);
       cameraCount = cameras.length;
-      const stats = await getFrigateStats().catch(() => null);
-      detectorFps = stats
-        ? Object.values<any>(stats.detectors ?? {}).reduce(
-            (sum, d) => sum + Number(d?.detection_fps ?? 0),
-            0,
-          )
-        : undefined;
+      detectorFps = detectionFps(await getFrigateStats().catch(() => null));
     }
 
     return {
       app: { version: config.version, previewRefreshSeconds: config.previewRefreshSeconds },
       frigate: {
         connected: Boolean(base),
-        version: typeof version === "string" ? version.replace(/"/g, "") : undefined,
+        version,
         cameraCount,
         detectorFps,
         discoveredVia: meta.via,
         error: base ? undefined : (meta.lastError ?? undefined),
       },
       homeAssistant: await haStatus(),
+    };
+  });
+
+  /**
+   * Port + stream health for the Settings screen: which internal ports answer,
+   * how go2rtc is reached, and whether each camera maps to a go2rtc stream.
+   */
+  app.get("/api/diagnostics", async () => {
+    const go2rtc = await go2rtcDiagnostics();
+    const cameras = await listCameras().catch(() => []);
+    const streams = await Promise.all(
+      cameras.map(async (camera) => {
+        const resolved = await resolveStreamName(camera.id);
+        return { camera: camera.id, streamName: resolved.name, matched: resolved.matched };
+      }),
+    );
+    return {
+      ports: [
+        {
+          label: "Frigate API",
+          port: go2rtc.frigatePort,
+          required: true,
+          ok: go2rtc.frigateReachable,
+          detail: go2rtc.frigateBase ?? "No reachable Frigate instance",
+        },
+        {
+          label: "go2rtc (live video)",
+          port: go2rtc.go2rtcPort,
+          required: false,
+          ok: go2rtc.go2rtcDirect,
+          detail: go2rtc.go2rtcDirect
+            ? "Direct connection working"
+            : "Port closed — enable it in the Frigate add-on network options for WebRTC/MSE",
+        },
+      ],
+      liveVia: go2rtc.via,
+      streamCount: go2rtc.streamCount,
+      go2rtcStreams: go2rtc.streams,
+      cameraStreams: streams,
     };
   });
 
