@@ -83,3 +83,19 @@ export interface Preferences {
 }
 
 export type TabKey = "home" | "activity" | "cameras" | "settings";
+
+export interface PortCheck {
+  label: string;
+  port: number;
+  required: boolean;
+  ok: boolean;
+  detail: string;
+}
+
+export interface Diagnostics {
+  ports: PortCheck[];
+  liveVia: "go2rtc-direct" | "frigate-proxy" | null;
+  streamCount: number;
+  go2rtcStreams: string[];
+  cameraStreams: Array<{ camera: string; streamName: string; matched: boolean }>;
+}

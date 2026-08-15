@@ -1,6 +1,7 @@
 import { demo, demoImageFor } from "./demoData";
 import type {
   AppStatus,
+  Diagnostics,
   Camera,
   CameraDetail,
   DetectionEvent,
@@ -119,6 +120,7 @@ export const api = {
       return { connected: false, error: "Backend unreachable" };
     }
   },
+  diagnostics: () => getJson<Diagnostics>("api/diagnostics", demo.diagnostics),
   cameras: () => getJson<Camera[]>("api/cameras", demo.cameras),
   camera: (id: string) =>
     getJson<CameraDetail>(`api/cameras/${encodeURIComponent(id)}`, () => demo.camera(id)),
