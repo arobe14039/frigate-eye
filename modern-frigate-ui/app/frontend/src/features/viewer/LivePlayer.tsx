@@ -326,7 +326,7 @@ export function LivePlayer({
     const video = videoRef.current;
     if (!video) return;
     const src = apiUrl(currentPath);
-    const timeout = window.setTimeout(() => fallback("HLS timed out"), 8_000);
+    const timeout = window.setTimeout(() => fail("HLS timed out"), 8_000);
     let closed = false;
     let failed = false;
     const fail = (message: string) => {
