@@ -1,24 +1,43 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { ClientOnly } from "@tanstack/react-router";
+import { lazy, Suspense } from "react";
 
-// No head() here: the home route inherits title/description/og/twitter from
-// __root.tsx, and ships no og:image so serve-time hosting can inject the
-// project's social preview (explicit og:image or latest screenshot).
+// The production app is the Home Assistant add-on frontend in
+// modern-frigate-ui/app/frontend. This route renders those exact components so
+// the design can be reviewed here; with no add-on backend reachable, the API
+// layer falls back to its demo dataset.
+const AppRoot = lazy(async () => ({
+  default: (await import("../../modern-frigate-ui/app/frontend/src/app/AppRoot")).AppRoot,
+}));
+
 export const Route = createFileRoute("/")({
+  head: () => ({
+    meta: [
+      { title: "Modern Frigate UI — Mobile NVR for Home Assistant" },
+      {
+        name: "description",
+        content:
+          "A mobile-first Frigate NVR frontend for Home Assistant: live camera previews, an NVR scrub timeline and a calm activity feed.",
+      },
+      { property: "og:title", content: "Modern Frigate UI — Mobile NVR for Home Assistant" },
+      {
+        property: "og:description",
+        content:
+          "Beautiful phone-first Frigate viewing: live previews, scrub timeline, detections and per-user preferences, served through Home Assistant Ingress.",
+      },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
+    ],
+  }),
   component: Index,
 });
 
-// IMPORTANT: Replace this placeholder. See ./README.md for routing conventions.
 function Index() {
   return (
-    <div
-      className="flex min-h-screen items-center justify-center"
-      style={{ backgroundColor: "#fcfbf8" }}
-    >
-      <img
-        data-lovable-blank-page-placeholder="REMOVE_THIS"
-        src="https://cdn.gpteng.co/blank-app-v1.svg"
-        alt="Your app will live here!"
-      />
-    </div>
+    <ClientOnly fallback={<div className="min-h-dvh bg-background" />}>
+      <Suspense fallback={<div className="min-h-dvh bg-background" />}>
+        <AppRoot />
+      </Suspense>
+    </ClientOnly>
   );
 }
