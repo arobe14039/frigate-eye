@@ -3,7 +3,11 @@ import { useEffect, useRef, useState } from "react";
 import { usePageVisible } from "../../hooks/useAppState";
 import { apiUrl, cameraPreviewUrl, socketUrl } from "../../services/api";
 import { demoImageFor } from "../../services/demoData";
-import type { StreamOption } from "../../types";
+import type { StreamOption, StreamQuality } from "../../types";
+
+/** Append the requested quality tier; the backend maps it onto a go2rtc src. */
+const withQuality = (path: string, quality: StreamQuality) =>
+  !path || quality === "high" ? path : `${path}${path.includes("?") ? "&" : "?"}q=${quality}`;
 
 export type LiveStatus = {
   kind: StreamOption["kind"];
@@ -41,11 +45,13 @@ function supportedMseCodecs(): string {
 export function LivePlayer({
   cameraId,
   streams,
+  quality,
   muted,
   onStatus,
 }: {
   cameraId: string;
   streams: StreamOption[];
+  quality: StreamQuality;
   muted: boolean;
   onStatus?: (status: LiveStatus) => void;
 }) {
@@ -61,13 +67,14 @@ export function LivePlayer({
     ? streams
     : ([{ kind: "preview", path: "", label: "Preview frames" }] as StreamOption[]);
   const current = candidates[Math.min(attempt, candidates.length - 1)];
+  const currentPath = withQuality(current?.path ?? "", quality);
 
   // Restart the ladder when the camera changes.
   useEffect(() => {
     setAttempt(0);
     setRetry(0);
     setPreviewFailed(false);
-  }, [cameraId]);
+  }, [cameraId, quality]);
 
   useEffect(() => {
     onStatus?.(status);
@@ -126,7 +133,7 @@ export function LivePlayer({
       // Host candidates only: go2rtc lives on the same LAN as Home Assistant.
       bundlePolicy: "max-bundle",
     });
-    const socket = new WebSocket(socketUrl(current.path));
+    const socket = new WebSocket(socketUrl(currentPath));
     const timeout = window.setTimeout(() => fallback("WebRTC timed out"), 6_000);
 
     const cleanup = () => {
@@ -201,7 +208,7 @@ export function LivePlayer({
 
     return cleanup;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [current?.kind, current?.path, visible, retry]);
+  }, [current?.kind, currentPath, visible, retry]);
 
   // ---- MSE (fragmented MP4 over the relay) ----
   useEffect(() => {
@@ -213,7 +220,7 @@ export function LivePlayer({
       return;
     }
 
-    const socket = new WebSocket(socketUrl(current.path));
+    const socket = new WebSocket(socketUrl(currentPath));
     socket.binaryType = "arraybuffer";
     const mediaSource = new MS();
     let sourceBuffer: any = null;
@@ -296,14 +303,14 @@ export function LivePlayer({
       video.load();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [current?.kind, current?.path, visible, retry]);
+  }, [current?.kind, currentPath, visible, retry]);
 
   // ---- HLS via hls.js (all browsers) or native playback (Safari/iOS) ----
   useEffect(() => {
     if (current?.kind !== "hls" || !visible) return;
     const video = videoRef.current;
     if (!video) return;
-    const src = apiUrl(current.path);
+    const src = apiUrl(currentPath);
     const timeout = window.setTimeout(() => fallback("HLS timed out"), 8_000);
     const onPlaying = () => {
       clearTimeout(timeout);
@@ -341,7 +348,7 @@ export function LivePlayer({
       video.removeAttribute("src");
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [current?.kind, current?.path, visible, retry]);
+  }, [current?.kind, currentPath, visible, retry]);
 
   // Preview-frame fallback keeps the viewer usable when nothing streams.
   useEffect(() => {
@@ -353,7 +360,7 @@ export function LivePlayer({
   if (current?.kind === "mjpeg") {
     return (
       <img
-        src={apiUrl(current.path)}
+        src={apiUrl(currentPath)}
         onLoad={(event) =>
           setStatus({
             kind: "mjpeg",
