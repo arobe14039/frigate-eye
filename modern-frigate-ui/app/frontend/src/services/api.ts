@@ -72,6 +72,9 @@ export const recordingFrameUrl = (cameraId: string, timestamp: number) =>
 let demoMode = false;
 export const isDemoMode = () => demoMode;
 
+/** Resolves false when no add-on backend is behind this page. */
+export const backendReachable = () => probeBackend();
+
 async function getJson<T>(path: string, fallback: () => T): Promise<T> {
   // Never issue the real request when the probe already told us there is no
   // backend: that would produce a stream of failed requests per screen.
