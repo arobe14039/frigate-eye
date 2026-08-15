@@ -26,7 +26,7 @@ export async function registerLive(app: FastifyInstance) {
         upstream.close();
       } catch {}
     };
-    upstream.on("message", (data) => client.readyState === 1 && client.send(data as any));
+    upstream.on("message", (data: unknown) => client.readyState === 1 && client.send(data as any));
     client.on("message", (data: any) => upstream.readyState === 1 && upstream.send(data));
     upstream.on("close", closeBoth);
     upstream.on("error", closeBoth);
