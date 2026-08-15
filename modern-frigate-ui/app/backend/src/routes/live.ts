@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import WebSocket from "ws";
 import { resolveFrigateBase } from "../services/frigate/client.js";
 import { parseQuality, resolveGo2rtc, resolveStreamSrc } from "../services/frigate/go2rtc.js";
@@ -47,7 +48,11 @@ export async function registerLive(app: FastifyInstance) {
 
     app.log.info({ mode, src, upstreamUrl }, "live relay: connecting upstream");
     const upstream = new WebSocket(upstreamUrl, { handshakeTimeout: 8000 });
+    const pending: Array<{ data: WebSocket.RawData; binary: boolean }> = [];
+    let closed = false;
     const closeBoth = (reason: string) => {
+      if (closed) return;
+      closed = true;
       app.log.debug({ mode, src, reason }, "live relay: closing");
       try {
         client.close();
@@ -57,12 +62,20 @@ export async function registerLive(app: FastifyInstance) {
       } catch {}
     };
 
-    upstream.on("open", () => app.log.info({ mode, src }, "live relay: upstream open"));
+    upstream.on("open", () => {
+      app.log.info({ mode, src, queuedMessages: pending.length }, "live relay: upstream open");
+      for (const message of pending.splice(0)) {
+        upstream.send(message.data, { binary: message.binary });
+      }
+    });
     upstream.on("message", (data: unknown, isBinary: boolean) => {
       if (client.readyState === 1) client.send(data as any, { binary: isBinary });
     });
     client.on("message", (data: any, isBinary: boolean) => {
       if (upstream.readyState === 1) upstream.send(data, { binary: isBinary });
+      else if (upstream.readyState === 0 && pending.length < 32) {
+        pending.push({ data, binary: isBinary });
+      }
     });
     upstream.on("close", (code: number) => closeBoth(`upstream_close_${code}`));
     upstream.on("error", (error: Error) => {
@@ -86,26 +99,37 @@ export async function registerLive(app: FastifyInstance) {
    * the caller ends up trying to send a second (already-sent) reply.
    */
   const pipe = async (url: string, reply: any, log: Record<string, unknown>) => {
-    let started = false;
+    const abort = new AbortController();
+    const headerTimeout = setTimeout(() => abort.abort(new Error("upstream headers timed out")), 8_000);
+    const onClientClose = () => abort.abort(new Error("client disconnected"));
+    reply.raw.once("close", onClientClose);
     try {
-      const upstream = await fetch(url, { headers: { accept: "*/*" } });
+      const upstream = await fetch(url, { headers: { accept: "*/*" }, signal: abort.signal });
+      clearTimeout(headerTimeout);
       if (!upstream.ok || !upstream.body) {
+        await upstream.body?.cancel().catch(() => undefined);
         app.log.warn({ ...log, url, status: upstream.status }, "live http: upstream rejected");
         return null;
       }
-      reply.header(
+      reply.raw.statusCode = upstream.status;
+      reply.raw.setHeader(
         "content-type",
         upstream.headers.get("content-type") ?? "application/octet-stream",
       );
-      reply.header("cache-control", "no-store");
-      started = true;
-      reply.send(Readable.fromWeb(upstream.body as any));
+      reply.raw.setHeader("cache-control", "no-store");
+      reply.hijack();
+      await pipeline(Readable.fromWeb(upstream.body as any), reply.raw, { signal: abort.signal });
       return reply;
     } catch (error) {
-      app.log.error({ ...log, url, err: (error as Error).message }, "live http: proxy failed");
-      // Never fall through to another send once the reply has been handed a body.
-      if (started || reply.sent || reply.raw.headersSent) return reply;
+      const disconnected = reply.raw.destroyed || abort.signal.reason?.message === "client disconnected";
+      if (!disconnected) {
+        app.log.error({ ...log, url, err: (error as Error).message }, "live http: proxy failed");
+      }
+      if (reply.sent || reply.raw.headersSent) return reply;
       return null;
+    } finally {
+      clearTimeout(headerTimeout);
+      reply.raw.off("close", onClientClose);
     }
   };
 
