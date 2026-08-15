@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.6
+
+- Live view now shows a loading state while a stream connects, instead of a blank/broken video area.
+- Streams that die mid-playback are retried on the same transport twice (with the reason shown) before stepping down the fallback ladder, so brief glitches no longer drop you to preview frames.
+- Once playing, the viewer badges the active stream type (WebRTC/HLS/MSE/MJPEG) and its quality (e.g. 1080p).
+- Stopped the stream proxy from occasionally attempting a second reply after a segment had already started streaming, which logged 500s during normal HLS playback.
+
 ## 0.1.5
 
 - Fixed HLS/MJPEG live playback: the proxy sent the upstream body in a format Fastify could not stream, so every playlist and segment request failed with a 500 ("Reply was already sent"). Upstream bodies are now converted to Node streams and never double-sent.
