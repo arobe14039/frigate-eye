@@ -130,6 +130,7 @@ export function LivePlayer({
 
     let closed = false;
     let failed = false;
+    let connected = false;
     const fail = (message: string) => {
       if (closed || failed) return;
       failed = true;
@@ -163,12 +164,13 @@ export function LivePlayer({
     };
     peer.oniceconnectionstatechange = () => {
       if (peer.iceConnectionState === "connected" || peer.iceConnectionState === "completed") {
+        connected = true;
         clearTimeout(timeout);
         log("webrtc connected");
         markPlaying("webrtc");
       }
       if (peer.iceConnectionState === "failed") fail("WebRTC ICE failed");
-      if (peer.iceConnectionState === "disconnected" && status.phase === "playing") {
+      if (peer.iceConnectionState === "disconnected" && connected) {
         fail("WebRTC connection dropped");
       }
     };
@@ -240,6 +242,14 @@ export function LivePlayer({
       recover(message);
     };
     const timeout = window.setTimeout(() => fail("MSE timed out"), 6_000);
+    const onPlaying = () => {
+      clearTimeout(timeout);
+      log("mse playing");
+      markPlaying("mse");
+    };
+    const onVideoError = () => fail("MSE playback error");
+    video.addEventListener("playing", onPlaying);
+    video.addEventListener("error", onVideoError);
     video.disableRemotePlayback = true;
     video.src = URL.createObjectURL(mediaSource);
 
@@ -289,9 +299,7 @@ export function LivePlayer({
               flush();
               trim();
             });
-            clearTimeout(timeout);
-            log("mse playing", payload.value);
-            markPlaying("mse");
+            log("mse codec ready", payload.value);
             void video.play().catch(() => undefined);
           } else if (payload.type === "error") {
             fail(String(payload.value ?? "go2rtc error"));
@@ -308,6 +316,8 @@ export function LivePlayer({
     return () => {
       closed = true;
       clearTimeout(timeout);
+      video.removeEventListener("playing", onPlaying);
+      video.removeEventListener("error", onVideoError);
       try {
         socket.close();
       } catch {}
@@ -339,7 +349,9 @@ export function LivePlayer({
       log("hls playing");
       markPlaying("hls");
     };
+    const onVideoError = () => fail("HLS playback error");
     video.addEventListener("playing", onPlaying);
+    video.addEventListener("error", onVideoError);
 
     let hls: Hls | null = null;
     if (Hls.isSupported()) {
@@ -373,6 +385,7 @@ export function LivePlayer({
       closed = true;
       clearTimeout(timeout);
       video.removeEventListener("playing", onPlaying);
+      video.removeEventListener("error", onVideoError);
       hls?.destroy();
       video.removeAttribute("src");
     };
@@ -387,9 +400,10 @@ export function LivePlayer({
   }, [current?.kind, visible]);
 
   if (current?.kind === "mjpeg") {
+    const retryPath = `${currentPath}${currentPath.includes("?") ? "&" : "?"}retry=${retry}`;
     return (
       <img
-        src={apiUrl(currentPath)}
+        src={apiUrl(retryPath)}
         onLoad={(event) =>
           setStatus({
             kind: "mjpeg",
@@ -431,7 +445,6 @@ export function LivePlayer({
           height: event.currentTarget.videoHeight || undefined,
         }))
       }
-      onError={() => recover("Playback error")}
       className="size-full bg-background object-contain"
     />
   );
