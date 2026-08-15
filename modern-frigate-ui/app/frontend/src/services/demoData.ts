@@ -6,6 +6,7 @@ import type {
   AppStatus,
   Camera,
   CameraDetail,
+  Diagnostics,
   DetectionEvent,
   Preferences,
   TimelineData,
