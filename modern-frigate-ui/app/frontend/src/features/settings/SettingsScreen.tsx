@@ -255,6 +255,41 @@ function PortsGroup() {
           No go2rtc stream matches: {unmatched.map((entry) => entry.camera).join(", ")}.
         </p>
       ) : null}
+      {suggestion && suggestion.cameras.length ? (
+        <div className="mt-4 rounded-2xl bg-surface-2 p-3">
+          <h3 className="text-[14px] font-semibold">Enable live video in Frigate</h3>
+          <p className="mt-1 text-[12.5px] text-subtle">
+            Frigate only exposes go2rtc streams you declare. Paste this as a top-level section in
+            your Frigate config, restart Frigate, then tap Re-check.
+            {suggestion.complete
+              ? " The camera URLs below come from your own Frigate config."
+              : " Replace the placeholder credentials and IPs with your camera details."}
+          </p>
+          <pre className="mt-2 max-h-64 overflow-auto rounded-xl bg-surface p-2.5 text-[11.5px] leading-relaxed">
+            <code>{suggestion.yaml}</code>
+          </pre>
+          <button
+            type="button"
+            onClick={async () => {
+              try {
+                await navigator.clipboard.writeText(suggestion.yaml);
+                setCopied("Copied to clipboard");
+              } catch {
+                setCopied("Copy failed — select the text manually");
+              }
+              setTimeout(() => setCopied(null), 2500);
+            }}
+            className="mt-3 h-11 w-full rounded-2xl bg-surface text-[14px] font-medium"
+          >
+            {copied ?? "Copy YAML"}
+          </button>
+          <p className="mt-2 flex items-start gap-1.5 text-[12px] text-detect">
+            <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+            This block contains your camera credentials — keep it private.
+          </p>
+        </div>
+      ) : null}
     </Group>
   );
 }
+
