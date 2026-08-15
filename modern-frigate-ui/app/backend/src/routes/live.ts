@@ -75,7 +75,12 @@ export async function registerLive(app: FastifyInstance) {
   app.get("/api/live/:stream/webrtc", { websocket: true }, relay("webrtc"));
   app.get("/api/live/:stream/mse", { websocket: true }, relay("mse"));
 
-  /** Stream an upstream response body through untouched. */
+  /**
+   * Stream an upstream response body through untouched.
+   * The body is a Web ReadableStream, which Fastify cannot send directly —
+   * it must be converted to a Node stream, otherwise `reply.send` throws and
+   * the caller ends up trying to send a second (already-sent) reply.
+   */
   const pipe = async (url: string, reply: any, log: Record<string, unknown>) => {
     try {
       const upstream = await fetch(url, { headers: { accept: "*/*" } });
@@ -88,12 +93,15 @@ export async function registerLive(app: FastifyInstance) {
         upstream.headers.get("content-type") ?? "application/octet-stream",
       );
       reply.header("cache-control", "no-store");
-      return reply.send(upstream.body);
+      return reply.send(Readable.fromWeb(upstream.body as any));
     } catch (error) {
       app.log.error({ ...log, url, err: (error as Error).message }, "live http: proxy failed");
+      // Never fall through to another send once headers may have gone out.
+      if (reply.sent || reply.raw.headersSent) return reply;
       return null;
     }
   };
+
 
   /** Proxy a go2rtc HTTP endpoint for a camera, resolving its stream name. */
   const proxyGo2rtc = async (
