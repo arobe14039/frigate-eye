@@ -84,6 +84,7 @@ export async function registerLive(app: FastifyInstance) {
    * the caller ends up trying to send a second (already-sent) reply.
    */
   const pipe = async (url: string, reply: any, log: Record<string, unknown>) => {
+    let started = false;
     try {
       const upstream = await fetch(url, { headers: { accept: "*/*" } });
       if (!upstream.ok || !upstream.body) {
@@ -95,11 +96,12 @@ export async function registerLive(app: FastifyInstance) {
         upstream.headers.get("content-type") ?? "application/octet-stream",
       );
       reply.header("cache-control", "no-store");
+      started = true;
       return reply.send(Readable.fromWeb(upstream.body as any));
     } catch (error) {
       app.log.error({ ...log, url, err: (error as Error).message }, "live http: proxy failed");
-      // Never fall through to another send once headers may have gone out.
-      if (reply.sent || reply.raw.headersSent) return reply;
+      // Never fall through to another send once the reply has been handed a body.
+      if (started || reply.sent || reply.raw.headersSent) return reply;
       return null;
     }
   };
