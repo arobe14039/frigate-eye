@@ -1,0 +1,30 @@
+name: Lint
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  addon-config:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate add-on config
+        uses: frenck/action-addon-linter@v2
+        with:
+          path: "./modern-frigate-ui"
+
+  app:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Typecheck frontend
+        working-directory: modern-frigate-ui/app/frontend
+        run: npm install --no-audit --no-fund && npm run lint
+      - name: Typecheck backend
+        working-directory: modern-frigate-ui/app/backend
+        run: npm install --no-audit --no-fund && npm run lint

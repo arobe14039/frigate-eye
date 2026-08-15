@@ -1,0 +1,27 @@
+name: Release add-on
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and publish images
+        uses: home-assistant/builder@master
+        with:
+          args: |
+            --all \
+            --target modern-frigate-ui \
+            --docker-hub ghcr.io/${{ github.repository_owner }}
