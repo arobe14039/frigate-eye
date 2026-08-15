@@ -44,7 +44,7 @@ const makeEvents = (count: number, cameras?: string[], labels?: string[]): Detec
       id: `demo-${index}-${camera.id}`,
       camera: camera.id,
       label,
-      subLabel: label === "person" && index % 4 === 0 ? "Alex" : undefined,
+      ...(label === "person" && index % 4 === 0 ? { subLabel: "Alex" } : {}),
       startTime: start,
       endTime: start + 12_000 + (index % 6) * 4_000,
       score: 0.68 + ((index * 7) % 30) / 100,
