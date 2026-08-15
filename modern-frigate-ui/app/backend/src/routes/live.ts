@@ -1,7 +1,9 @@
 import type { FastifyInstance } from "fastify";
+import { Readable } from "node:stream";
 import WebSocket from "ws";
 import { resolveFrigateBase } from "../services/frigate/client.js";
 import { resolveGo2rtc, resolveStreamName } from "../services/frigate/go2rtc.js";
+
 
 /**
  * Live streaming adapter. go2rtc (bundled with Frigate) is reached only from
