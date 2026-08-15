@@ -98,4 +98,9 @@ export interface Diagnostics {
   streamCount: number;
   go2rtcStreams: string[];
   cameraStreams: Array<{ camera: string; streamName: string; matched: boolean }>;
+  go2rtcSuggestion?: {
+    cameras: Array<{ camera: string; url: string }>;
+    yaml: string;
+    complete: boolean;
+  };
 }

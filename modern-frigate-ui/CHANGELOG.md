@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.4
+
+- Settings now generates a paste-ready `go2rtc:` block for every camera missing a live stream, built from your own Frigate camera URLs, with a copy button.
+
 ## 0.1.3
 
 - Fixed live video: go2rtc stream names are now resolved from go2rtc's own stream list instead of assumed from the camera name (the cause of the 404s on every WebRTC/MSE/HLS request).

@@ -107,6 +107,50 @@ export async function resolveStreamName(camera: string): Promise<{ name: string;
   return { name: candidates[0] ?? camera, matched: false };
 }
 
+interface FfmpegInput {
+  path?: string;
+  roles?: string[];
+}
+
+/** Pick the best RTSP URL for a camera: record input first, then detect, then any. */
+function pickInputUrl(inputs: FfmpegInput[]): string | null {
+  const byRole = (role: string) =>
+    inputs.find((input) => Array.isArray(input.roles) && input.roles.includes(role));
+  const chosen = byRole("record") ?? byRole("detect") ?? inputs[0];
+  const path = typeof chosen?.path === "string" ? chosen.path.trim() : "";
+  return path || null;
+}
+
+/**
+ * Build a paste-ready `go2rtc:` block for every camera that has no matching
+ * go2rtc stream, using the camera's own RTSP URLs from Frigate's config.
+ */
+export async function buildGo2rtcSuggestion(cameraIds: string[]) {
+  let cfgCameras: Record<string, { ffmpeg?: { inputs?: FfmpegInput[] } }> = {};
+  try {
+    const cfg = await getFrigateConfig();
+    cfgCameras = (cfg?.cameras ?? {}) as typeof cfgCameras;
+  } catch {
+    /* config unavailable — fall back to templated URLs */
+  }
+
+  let complete = true;
+  const cameras = cameraIds.map((camera) => {
+    const inputs = cfgCameras[camera]?.ffmpeg?.inputs ?? [];
+    const url = pickInputUrl(Array.isArray(inputs) ? inputs : []);
+    if (!url) complete = false;
+    return { camera, url: url ?? "rtsp://USER:PASSWORD@CAMERA_IP:554/stream" };
+  });
+
+  const yaml = cameras.length
+    ? ["go2rtc:", "  streams:", ...cameras.flatMap(({ camera, url }) => [`    ${camera}:`, `      - ${url}`])].join(
+        "\n",
+      )
+    : "";
+
+  return { cameras, yaml, complete };
+}
+
 /** Port / stream health used by the Settings diagnostics panel. */
 export async function go2rtcDiagnostics() {
   const base = await resolveFrigateBase();
@@ -123,3 +167,4 @@ export async function go2rtcDiagnostics() {
     streams: streams.slice(0, 24),
   };
 }
+

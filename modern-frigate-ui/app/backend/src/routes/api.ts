@@ -3,7 +3,11 @@ import { z } from "zod";
 import { config } from "../config.js";
 import { getCamera, listCameras, listLabels, getFrigateStats } from "../services/frigate/cameras.js";
 import { frigateMeta, resolveFrigateBase, frigateFetch } from "../services/frigate/client.js";
-import { go2rtcDiagnostics, resolveStreamName } from "../services/frigate/go2rtc.js";
+import {
+  buildGo2rtcSuggestion,
+  go2rtcDiagnostics,
+  resolveStreamName,
+} from "../services/frigate/go2rtc.js";
 import { getEvent, listEvents } from "../services/frigate/events.js";
 import { requestExport } from "../services/frigate/exports.js";
 import { streamOptions } from "../services/frigate/live.js";
@@ -126,8 +130,12 @@ export async function registerApi(app: FastifyInstance) {
       streamCount: go2rtc.streamCount,
       go2rtcStreams: go2rtc.streams,
       cameraStreams: streams,
+      go2rtcSuggestion: await buildGo2rtcSuggestion(
+        streams.filter((entry) => !entry.matched).map((entry) => entry.camera),
+      ),
     };
   });
+
 
   app.post("/api/status/test", async () => {
     const base = await resolveFrigateBase(true);
