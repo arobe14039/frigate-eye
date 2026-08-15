@@ -171,15 +171,13 @@ export async function go2rtcDiagnostics() {
 
 export type StreamQuality = "low" | "medium" | "high";
 
-/** Target decode height per tier; `high` keeps the camera's native stream. */
-const QUALITY_HEIGHT: Record<StreamQuality, number> = { low: 360, medium: 720, high: 0 };
-
 /**
  * Resolve the go2rtc `src` to request for a camera at a given quality tier.
  *
  * A 4K main stream is expensive to decode on a phone, so lower tiers prefer a
- * dedicated sub-stream when go2rtc serves one (`<camera>_sub` and friends) and
- * otherwise ask go2rtc to transcode down on the fly.
+ * dedicated sub-stream when go2rtc serves one (`<camera>_sub` and friends).
+ * When none is configured, the native stream is returned: synthesized ffmpeg
+ * sources are not portable across go2rtc/Frigate builds and can fail slowly.
  */
 export async function resolveStreamSrc(
   camera: string,
@@ -199,13 +197,10 @@ export async function resolveStreamSrc(
     if (hit) return { name: hit, matched: true };
   }
 
-  return {
-    name: `ffmpeg:${base.name}#video=h264#height=${QUALITY_HEIGHT[quality]}`,
-    matched: true,
-  };
+  return base;
 }
 
 /** Normalise a `q` query value onto a quality tier. */
 export function parseQuality(value: unknown): StreamQuality {
-  return value === "low" || value === "medium" ? value : "high";
+  return value === "low" || value === "high" ? value : "medium";
 }

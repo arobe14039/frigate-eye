@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.8
+
+- Fixed dropped WebRTC/MSE negotiation messages by buffering browser messages until the upstream go2rtc socket is open.
+- Reworked HLS/MJPEG proxy streaming around an explicitly hijacked response and abortable pipeline, eliminating duplicate Fastify replies and cleaning up immediately when a viewer disconnects.
+- Added bounded upstream-header timeouts and idempotent WebSocket shutdown to prevent hanging requests and duplicate close handling.
+- Hardened player recovery so each failed attempt can trigger only one retry/fallback transition, cleanup events cannot restart dead transports, and HLS retries are bounded.
+- Low/Medium quality now use configured sub-streams when available and safely fall back to the native stream instead of requesting unsupported synthesized ffmpeg streams.
+
 ## 0.1.7
 
 - Added a Low / Medium / High stream quality selector to the live viewer (remembered per device), so 4K cameras no longer have to be decoded in full on a phone.

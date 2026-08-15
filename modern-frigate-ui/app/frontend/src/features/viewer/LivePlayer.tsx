@@ -85,8 +85,9 @@ export function LivePlayer({
       const next = Math.min(previous + 1, candidates.length - 1);
       if (next !== previous) log(`${candidates[previous]?.kind} failed: ${message} → ${candidates[next]?.kind}`);
       setRetry(0);
+      const nextCandidate = candidates[next];
       setStatus({
-        kind: candidates[next]!.kind,
+        kind: nextCandidate?.kind ?? "preview",
         phase: next === previous && next === candidates.length - 1 ? "failed" : "connecting",
         message,
       });
@@ -98,11 +99,11 @@ export function LivePlayer({
    * so retry the same transport twice before stepping down the ladder.
    */
   const recover = (message: string) => {
-    if (retry >= 2) {
+    if (retry >= 1) {
       fallback(message);
       return;
     }
-    log(`${current?.kind} interrupted: ${message} → retry ${retry + 1}`);
+    log(`${current?.kind} failed: ${message} → retry ${retry + 1}`);
     setStatus((previous) => ({ ...previous, phase: "connecting", message }));
     setRetry((value) => value + 1);
   };
@@ -128,13 +129,20 @@ export function LivePlayer({
     }
 
     let closed = false;
+    let failed = false;
+    let connected = false;
+    const fail = (message: string) => {
+      if (closed || failed) return;
+      failed = true;
+      recover(message);
+    };
     const peer = new RTCPeerConnection({
       iceServers: [],
       // Host candidates only: go2rtc lives on the same LAN as Home Assistant.
       bundlePolicy: "max-bundle",
     });
     const socket = new WebSocket(socketUrl(currentPath));
-    const timeout = window.setTimeout(() => fallback("WebRTC timed out"), 6_000);
+    const timeout = window.setTimeout(() => fail("WebRTC timed out"), 6_000);
 
     const cleanup = () => {
       closed = true;
@@ -155,18 +163,21 @@ export function LivePlayer({
       void video.play().catch(() => undefined);
     };
     peer.oniceconnectionstatechange = () => {
+      if (closed) return;
       if (peer.iceConnectionState === "connected" || peer.iceConnectionState === "completed") {
+        connected = true;
         clearTimeout(timeout);
         log("webrtc connected");
         markPlaying("webrtc");
       }
-      if (peer.iceConnectionState === "failed") recover("WebRTC ICE failed");
-      if (peer.iceConnectionState === "disconnected" && status.phase === "playing") {
-        recover("WebRTC connection dropped");
+      if (peer.iceConnectionState === "failed") fail("WebRTC ICE failed");
+      if (peer.iceConnectionState === "disconnected" && connected) {
+        fail("WebRTC connection dropped");
       }
     };
     // Trickle ICE — go2rtc accepts candidates as they are discovered.
     peer.onicecandidate = (event) => {
+      if (closed) return;
       if (socket.readyState === 1) {
         socket.send(
           JSON.stringify({ type: "webrtc/candidate", value: event.candidate?.candidate ?? "" }),
@@ -177,29 +188,35 @@ export function LivePlayer({
     socket.onopen = async () => {
       try {
         const offer = await peer.createOffer();
+        if (closed) return;
         await peer.setLocalDescription(offer);
+        if (closed) return;
         socket.send(JSON.stringify({ type: "webrtc/offer", value: peer.localDescription?.sdp }));
       } catch (error) {
         console.warn("[live] webrtc offer failed", error);
-        fallback("WebRTC negotiation failed");
+        fail("WebRTC negotiation failed");
       }
     };
-    socket.onerror = () => fallback("WebRTC relay unreachable");
+    socket.onerror = () => {
+      if (!closed) fail("WebRTC relay unreachable");
+    };
     socket.onclose = (event) => {
       if (!closed && peer.iceConnectionState !== "connected") {
-        fallback(`WebRTC relay closed (${event.code})`);
+        fail(`WebRTC relay closed (${event.code})`);
       }
     };
     socket.onmessage = async (message) => {
+      if (closed) return;
       try {
         const payload = JSON.parse(message.data);
         if (payload.type === "webrtc/answer") {
           await peer.setRemoteDescription({ type: "answer", sdp: payload.value });
+          if (closed) return;
         } else if (payload.type === "webrtc/candidate" && payload.value) {
           await peer.addIceCandidate({ candidate: payload.value, sdpMid: "0" }).catch(() => undefined);
         } else if (payload.type === "error") {
           console.warn("[live] go2rtc error", payload.value);
-          fallback(String(payload.value ?? "go2rtc error"));
+          fail(String(payload.value ?? "go2rtc error"));
         }
       } catch {
         /* non-JSON frames are ignored during signalling */
@@ -225,14 +242,30 @@ export function LivePlayer({
     const mediaSource = new MS();
     let sourceBuffer: any = null;
     const queue: ArrayBuffer[] = [];
-    const timeout = window.setTimeout(() => fallback("MSE timed out"), 6_000);
+    let closed = false;
+    let failed = false;
+    const fail = (message: string) => {
+      if (closed || failed) return;
+      failed = true;
+      recover(message);
+    };
+    const timeout = window.setTimeout(() => fail("MSE timed out"), 6_000);
+    const onPlaying = () => {
+      clearTimeout(timeout);
+      log("mse playing");
+      markPlaying("mse");
+    };
+    const onVideoError = () => fail("MSE playback error");
+    video.addEventListener("playing", onPlaying);
+    video.addEventListener("error", onVideoError);
     video.disableRemotePlayback = true;
     video.src = URL.createObjectURL(mediaSource);
 
     const flush = () => {
       if (!sourceBuffer || sourceBuffer.updating || !queue.length) return;
       try {
-        sourceBuffer.appendBuffer(queue.shift()!);
+        const next = queue.shift();
+        if (next) sourceBuffer.appendBuffer(next);
       } catch (error) {
         console.warn("[live] mse append failed", error);
       }
@@ -259,10 +292,9 @@ export function LivePlayer({
     socket.onopen = () => {
       if (mediaSource.readyState === "open") requestStream();
     };
-    socket.onerror = () => fallback("MSE relay unreachable");
+    socket.onerror = () => fail("MSE relay unreachable");
     socket.onclose = (event) => {
-      if (status.phase === "playing") recover(`MSE stream ended (${event.code})`);
-      else fallback(`MSE relay closed (${event.code})`);
+      fail(`MSE relay closed (${event.code})`);
     };
     socket.onmessage = (message) => {
       if (typeof message.data === "string") {
@@ -275,12 +307,10 @@ export function LivePlayer({
               flush();
               trim();
             });
-            clearTimeout(timeout);
-            log("mse playing", payload.value);
-            markPlaying("mse");
+            log("mse codec ready", payload.value);
             void video.play().catch(() => undefined);
           } else if (payload.type === "error") {
-            fallback(String(payload.value ?? "go2rtc error"));
+            fail(String(payload.value ?? "go2rtc error"));
           }
         } catch {
           /* ignore */
@@ -292,7 +322,10 @@ export function LivePlayer({
     };
 
     return () => {
+      closed = true;
       clearTimeout(timeout);
+      video.removeEventListener("playing", onPlaying);
+      video.removeEventListener("error", onVideoError);
       try {
         socket.close();
       } catch {}
@@ -311,13 +344,22 @@ export function LivePlayer({
     const video = videoRef.current;
     if (!video) return;
     const src = apiUrl(currentPath);
-    const timeout = window.setTimeout(() => fallback("HLS timed out"), 8_000);
+    let closed = false;
+    let failed = false;
+    const fail = (message: string) => {
+      if (closed || failed) return;
+      failed = true;
+      recover(message);
+    };
+    const timeout = window.setTimeout(() => fail("HLS timed out"), 8_000);
     const onPlaying = () => {
       clearTimeout(timeout);
       log("hls playing");
       markPlaying("hls");
     };
+    const onVideoError = () => fail("HLS playback error");
     video.addEventListener("playing", onPlaying);
+    video.addEventListener("error", onVideoError);
 
     let hls: Hls | null = null;
     if (Hls.isSupported()) {
@@ -326,10 +368,16 @@ export function LivePlayer({
         backBufferLength: 10,
         maxBufferLength: 6,
         liveSyncDurationCount: 2,
+        manifestLoadingMaxRetry: 1,
+        levelLoadingMaxRetry: 1,
+        fragLoadingMaxRetry: 2,
+        manifestLoadingRetryDelay: 500,
+        levelLoadingRetryDelay: 500,
+        fragLoadingRetryDelay: 500,
       } as any);
       hls.on(Hls.Events.ERROR, (_event: unknown, data: any) => {
         console.warn("[live] hls error", data.type, data.details);
-        if (data.fatal) recover(`HLS error (${data.details})`);
+        if (data.fatal) fail(`HLS error (${data.details})`);
       });
       hls.loadSource(src);
       hls.attachMedia(video);
@@ -338,12 +386,14 @@ export function LivePlayer({
       video.src = src;
       void video.play().catch(() => undefined);
     } else {
-      fallback("HLS unsupported");
+      fail("HLS unsupported");
     }
 
     return () => {
+      closed = true;
       clearTimeout(timeout);
       video.removeEventListener("playing", onPlaying);
+      video.removeEventListener("error", onVideoError);
       hls?.destroy();
       video.removeAttribute("src");
     };
@@ -358,9 +408,10 @@ export function LivePlayer({
   }, [current?.kind, visible]);
 
   if (current?.kind === "mjpeg") {
+    const retryPath = `${currentPath}${currentPath.includes("?") ? "&" : "?"}retry=${retry}`;
     return (
       <img
-        src={apiUrl(currentPath)}
+        src={apiUrl(retryPath)}
         onLoad={(event) =>
           setStatus({
             kind: "mjpeg",
@@ -402,7 +453,6 @@ export function LivePlayer({
           height: event.currentTarget.videoHeight || undefined,
         }))
       }
-      onError={() => recover("Playback error")}
       className="size-full bg-background object-contain"
     />
   );
