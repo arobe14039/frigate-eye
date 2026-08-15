@@ -1,5 +1,5 @@
 name: "Modern Frigate UI"
-version: "0.1.0"
+version: "0.1.1"
 slug: "modern_frigate_ui"
 description: "A beautiful mobile-first interface for Frigate NVR"
 url: "https://github.com/arobe14039/frigate-eye"

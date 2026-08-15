@@ -10,6 +10,18 @@ import { resolveFrigateBase } from "./services/frigate/client.js";
 
 const app = Fastify({ logger: { level: config.logLevel as any }, trustProxy: true });
 
+// Ingress and some clients send POSTs without a usable content-type; accept
+// those instead of answering 415.
+app.addContentTypeParser("*", { parseAs: "buffer" }, (_request, body: Buffer, done) => {
+  const raw = body.toString("utf8").trim();
+  if (!raw) return done(null, undefined);
+  try {
+    done(null, JSON.parse(raw));
+  } catch {
+    done(null, raw);
+  }
+});
+
 await app.register(websocket, { options: { maxPayload: 8 * 1024 * 1024 } });
 await registerApi(app);
 await registerLive(app);
