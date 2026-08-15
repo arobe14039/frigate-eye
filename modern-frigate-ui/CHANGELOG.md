@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.5
+
+- Fixed HLS/MJPEG live playback: the proxy sent the upstream body in a format Fastify could not stream, so every playlist and segment request failed with a 500 ("Reply was already sent"). Upstream bodies are now converted to Node streams and never double-sent.
+- Live fallback order is now WebRTC → HLS → MSE → MJPEG → preview frames, so remote/Ingress viewers reach a working stream faster.
+
 ## 0.1.4
 
 - Settings now generates a paste-ready `go2rtc:` block for every camera missing a live stream, built from your own Frigate camera URLs, with a copy button.

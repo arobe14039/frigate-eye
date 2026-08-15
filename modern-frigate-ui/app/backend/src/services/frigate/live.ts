@@ -19,9 +19,10 @@ export async function streamOptions(camera: string): Promise<StreamOption[]> {
   const q = encodeURIComponent(camera);
   return [
     { kind: "webrtc", path: `api/live/${q}/webrtc`, label: "WebRTC (lowest latency)" },
-    { kind: "mse", path: `api/live/${q}/mse`, label: "MSE" },
     { kind: "hls", path: `api/live/${q}/hls/index.m3u8`, label: "HLS" },
+    { kind: "mse", path: `api/live/${q}/mse`, label: "MSE" },
     { kind: "mjpeg", path: `api/live/${q}/mjpeg`, label: "MJPEG" },
     { kind: "preview", path: `api/cameras/${q}/preview`, label: "Preview frames" },
   ];
+
 }
