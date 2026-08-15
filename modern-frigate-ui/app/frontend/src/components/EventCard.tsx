@@ -17,7 +17,7 @@ export function EventCard({
 }) {
   const [failed, setFailed] = useState(false);
   const [loaded, setLoaded] = useState(false);
-  const src = failed ? demoImageFor(event.camera) : eventThumbnailUrl(event.id);
+  const src = failed ? demoImageFor(event.camera) : eventThumbnailUrl(event.id, event.camera);
 
   return (
     <button
