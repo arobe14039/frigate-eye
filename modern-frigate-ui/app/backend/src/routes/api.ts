@@ -3,7 +3,11 @@ import { z } from "zod";
 import { config } from "../config.js";
 import { getCamera, listCameras, listLabels, getFrigateStats } from "../services/frigate/cameras.js";
 import { frigateMeta, resolveFrigateBase, frigateFetch } from "../services/frigate/client.js";
-import { go2rtcDiagnostics, resolveStreamName } from "../services/frigate/go2rtc.js";
+import {
+  buildGo2rtcSuggestion,
+  go2rtcDiagnostics,
+  resolveStreamName,
+} from "../services/frigate/go2rtc.js";
 import { getEvent, listEvents } from "../services/frigate/events.js";
 import { requestExport } from "../services/frigate/exports.js";
 import { streamOptions } from "../services/frigate/live.js";
