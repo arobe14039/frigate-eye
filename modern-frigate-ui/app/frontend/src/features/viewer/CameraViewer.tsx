@@ -14,12 +14,30 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import { BottomSheet, Skeleton, StatusDot } from "../../components/primitives";
 import { api, recordingFrameUrl } from "../../services/api";
-import type { DetectionEvent, Preferences } from "../../types";
+import type { DetectionEvent, Preferences, StreamQuality } from "../../types";
 import { clockTime, durationLabel, titleCase } from "../../utils/format";
 import { Timeline, ZOOM_WINDOWS } from "../timeline/Timeline";
 import { LivePlayer, type LiveStatus } from "./LivePlayer";
 
 const SPEEDS = [0.5, 1, 2, 4];
+
+const QUALITIES: Array<{ value: StreamQuality; label: string; hint: string }> = [
+  { value: "low", label: "Low", hint: "≈360p — smoothest on mobile data" },
+  { value: "medium", label: "Medium", hint: "≈720p — balanced" },
+  { value: "high", label: "High", hint: "Native camera stream (up to 4K)" },
+];
+
+const QUALITY_KEY = "frigate-ui:stream-quality";
+
+const storedQuality = (): StreamQuality => {
+  try {
+    const value = localStorage.getItem(QUALITY_KEY);
+    if (value === "low" || value === "medium" || value === "high") return value;
+  } catch {
+    /* storage unavailable */
+  }
+  return "medium";
+};
 
 const STREAM_LABELS: Record<LiveStatus["kind"], string> = {
   webrtc: "WebRTC",
@@ -59,6 +77,7 @@ export function CameraViewer({
   const [settled, setSettled] = useState<number | null>(null);
   const [playing, setPlaying] = useState(true);
   const [muted, setMuted] = useState(true);
+  const [quality, setQuality] = useState<StreamQuality>(storedQuality);
   const [speed, setSpeed] = useState(1);
   const [menuOpen, setMenuOpen] = useState(false);
   const [selected, setSelected] = useState<DetectionEvent | null>(null);
@@ -91,6 +110,15 @@ export function CameraViewer({
     const timer = setInterval(() => setPlayhead(Date.now()), 1_000);
     return () => clearInterval(timer);
   }, [live]);
+
+  const changeQuality = (value: StreamQuality) => {
+    setQuality(value);
+    try {
+      localStorage.setItem(QUALITY_KEY, value);
+    } catch {
+      /* storage unavailable */
+    }
+  };
 
   const scrub = (time: number) => {
     setLive(false);
@@ -144,6 +172,7 @@ export function CameraViewer({
           <LivePlayer
             cameraId={cameraId}
             streams={streams}
+            quality={quality}
             muted={muted}
             onStatus={setStreamStatus}
           />
@@ -234,7 +263,22 @@ export function CameraViewer({
           </button>
         </div>
         <div className="flex items-center gap-1 rounded-pill bg-surface p-1">
-          {SPEEDS.map((option) => (
+          {live
+            ? QUALITIES.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => changeQuality(option.value)}
+                  aria-pressed={quality === option.value}
+                  title={option.hint}
+                  className={`h-8 rounded-pill px-2.5 text-[12px] font-medium transition-colors ${
+                    quality === option.value ? "bg-accent text-background" : "text-muted"
+                  }`}
+                >
+                  {option.label}
+                </button>
+              ))
+            : SPEEDS.map((option) => (
             <button
               key={option}
               type="button"
@@ -242,10 +286,10 @@ export function CameraViewer({
               className={`h-8 rounded-pill px-2.5 text-[12px] font-medium transition-colors ${
                 speed === option ? "bg-accent text-background" : "text-muted"
               }`}
-            >
-              {option}x
-            </button>
-          ))}
+                >
+                  {option}x
+                </button>
+              ))}
         </div>
       </div>
 

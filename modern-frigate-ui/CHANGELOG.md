@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.7
+
+- Added a Low / Medium / High stream quality selector to the live viewer (remembered per device), so 4K cameras no longer have to be decoded in full on a phone.
+- Low (~360p) and Medium (~720p) prefer a camera's existing go2rtc sub-stream (`<camera>_sub`, `_low`, `_mid`, …) and otherwise ask go2rtc to downscale on the fly; High keeps the native stream.
+- The quality tier is applied to every transport (WebRTC, MSE, HLS, MJPEG) and switching it reconnects instantly.
+
+
+
 ## 0.1.6
 
 - Live view now shows a loading state while a stream connects, instead of a blank/broken video area.

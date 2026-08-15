@@ -2,7 +2,8 @@ import type { FastifyInstance } from "fastify";
 import { Readable } from "node:stream";
 import WebSocket from "ws";
 import { resolveFrigateBase } from "../services/frigate/client.js";
-import { resolveGo2rtc, resolveStreamName } from "../services/frigate/go2rtc.js";
+import { parseQuality, resolveGo2rtc, resolveStreamSrc } from "../services/frigate/go2rtc.js";
+import type { StreamQuality } from "../services/frigate/go2rtc.js";
 
 
 /**
@@ -16,10 +17,10 @@ import { resolveGo2rtc, resolveStreamName } from "../services/frigate/go2rtc.js"
  */
 export async function registerLive(app: FastifyInstance) {
   /** Upstream websocket URL for a signalling mode. */
-  const upstreamWsUrl = async (mode: "webrtc" | "mse", camera: string) => {
+  const upstreamWsUrl = async (mode: "webrtc" | "mse", camera: string, quality: StreamQuality) => {
     const target = await resolveGo2rtc();
     if (!target) return null;
-    const { name, matched } = await resolveStreamName(camera);
+    const { name, matched } = await resolveStreamSrc(camera, quality);
     if (!matched) {
       app.log.warn({ mode, camera, tried: name }, "live relay: no matching go2rtc stream");
       return null;
@@ -34,7 +35,8 @@ export async function registerLive(app: FastifyInstance) {
   const relay = (mode: "webrtc" | "mse") => async (connection: any, request: any) => {
     const client: WebSocket = connection.socket ?? connection;
     const src = String((request.params as any).stream ?? "");
-    const upstreamUrl = src ? await upstreamWsUrl(mode, src) : null;
+    const quality = parseQuality((request.query as any)?.q);
+    const upstreamUrl = src ? await upstreamWsUrl(mode, src, quality) : null;
     if (!upstreamUrl) {
       app.log.warn({ mode, src }, "live relay: go2rtc not reachable");
       try {
@@ -114,13 +116,14 @@ export async function registerLive(app: FastifyInstance) {
     build: (src: string) => string,
     reply: any,
     log: Record<string, unknown>,
+    quality: StreamQuality = "high",
   ) => {
     const target = await resolveGo2rtc();
     if (!target) {
       app.log.warn(log, "live http: go2rtc not reachable");
       return reply.code(503).send({ error: "go2rtc_unavailable" });
     }
-    const { name, matched } = await resolveStreamName(camera);
+    const { name, matched } = await resolveStreamSrc(camera, quality);
     if (!matched) {
       app.log.warn({ ...log, tried: name }, "live http: no matching go2rtc stream");
       return reply.code(503).send({ error: "stream_not_configured" });
@@ -138,7 +141,8 @@ export async function registerLive(app: FastifyInstance) {
       const search = request.url.includes("?")
         ? request.url.slice(request.url.indexOf("?") + 1)
         : "";
-      const log = { kind: "hls", stream: request.params.stream, rest };
+      const quality = parseQuality((request.query as any)?.q);
+      const log = { kind: "hls", stream: request.params.stream, rest, quality };
       if (rest && !rest.endsWith("index.m3u8")) {
         const target = await resolveGo2rtc();
         if (!target) return reply.code(503).send({ error: "go2rtc_unavailable" });
@@ -154,6 +158,7 @@ export async function registerLive(app: FastifyInstance) {
         (src) => `/stream.m3u8?src=${src}&mp4`,
         reply,
         log,
+        quality,
       );
     },
   );
@@ -165,11 +170,12 @@ export async function registerLive(app: FastifyInstance) {
     "/api/live/:stream/mjpeg",
     async (request, reply) => {
       const camera = request.params.stream;
+      const quality = parseQuality((request.query as any)?.q);
       const fps = Math.min(Math.max(Number(request.query.fps ?? 5) || 5, 1), 15);
       const log = { kind: "mjpeg", stream: camera };
       const target = await resolveGo2rtc();
       if (target) {
-        const { name, matched } = await resolveStreamName(camera);
+        const { name, matched } = await resolveStreamSrc(camera, quality);
         if (matched) {
           const sent = await pipe(
             `${target.http}/stream.mjpeg?src=${encodeURIComponent(name)}`,

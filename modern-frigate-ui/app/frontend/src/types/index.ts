@@ -10,6 +10,8 @@ export interface Camera {
   lastUpdated?: number;
 }
 
+export type StreamQuality = "low" | "medium" | "high";
+
 export type StreamKind = "webrtc" | "mse" | "hls" | "mjpeg" | "preview";
 
 export interface StreamOption {
