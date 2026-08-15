@@ -29,7 +29,9 @@ export function CamerasScreen({
     const index = current.indexOf(cameraId);
     const target = index + direction;
     if (index < 0 || target < 0 || target >= current.length) return;
-    [current[index], current[target]] = [current[target], current[index]];
+    const moved = current[index]!;
+    current[index] = current[target]!;
+    current[target] = moved;
     onReorder(current);
   };
 

@@ -37,8 +37,8 @@ const makeEvents = (count: number, cameras?: string[], labels?: string[]): Detec
   const labelPool = labels?.length ? labels : LABELS;
   const now = Date.now();
   return Array.from({ length: count }, (_, index) => {
-    const camera = pool[index % Math.max(pool.length, 1)] ?? DEMO_CAMERAS[0];
-    const label = labelPool[index % labelPool.length];
+    const camera = pool[index % Math.max(pool.length, 1)] ?? DEMO_CAMERAS[0]!;
+    const label = labelPool[index % labelPool.length]!;
     const start = now - index * 11 * 60 * 1000 - (index % 5) * 90_000;
     return {
       id: `demo-${index}-${camera.id}`,

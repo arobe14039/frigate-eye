@@ -246,7 +246,7 @@ export function CameraViewer({
                   <span className="text-[14px] font-medium">
                     {titleCase(event.label)}
                     {event.zones?.length ? (
-                      <span className="text-subtle"> · {titleCase(event.zones[0])}</span>
+                      <span className="text-subtle"> · {titleCase(event.zones[0]!)}</span>
                     ) : null}
                   </span>
                   <span className="font-mono text-[12px] text-subtle">

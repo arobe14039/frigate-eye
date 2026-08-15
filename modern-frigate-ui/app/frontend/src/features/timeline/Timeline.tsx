@@ -63,7 +63,12 @@ export function Timeline({
     return () => observer.disconnect();
   }, []);
 
-  useEffect(() => () => settleTimer.current && clearTimeout(settleTimer.current), []);
+  useEffect(
+    () => () => {
+      if (settleTimer.current) clearTimeout(settleTimer.current);
+    },
+    [],
+  );
 
   const windowMs = ZOOM_WINDOWS[zoom];
   const pxPerMs = width / windowMs;
@@ -114,7 +119,7 @@ export function Timeline({
           <button
             type="button"
             aria-label="Zoom in"
-            onClick={() => onZoomChange(ZOOM_ORDER[Math.max(0, zoomIndex - 1)])}
+            onClick={() => onZoomChange(ZOOM_ORDER[Math.max(0, zoomIndex - 1)]!)}
             className="grid size-8 place-items-center rounded-full bg-surface text-muted active:bg-surface-2"
           >
             <Plus className="size-4" />
@@ -123,7 +128,7 @@ export function Timeline({
           <button
             type="button"
             aria-label="Zoom out"
-            onClick={() => onZoomChange(ZOOM_ORDER[Math.min(ZOOM_ORDER.length - 1, zoomIndex + 1)])}
+            onClick={() => onZoomChange(ZOOM_ORDER[Math.min(ZOOM_ORDER.length - 1, zoomIndex + 1)]!)}
             className="grid size-8 place-items-center rounded-full bg-surface text-muted active:bg-surface-2"
           >
             <Minus className="size-4" />

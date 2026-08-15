@@ -97,7 +97,7 @@ export function SettingsScreen({
               active={preferences.previewRefresh === value}
               onClick={() => onUpdate({ previewRefresh: value })}
             >
-              {value === "off" ? "Off" : value[0].toUpperCase() + value.slice(1)}
+              {value === "off" ? "Off" : value[0]!.toUpperCase() + value.slice(1)}
             </Chip>
           ))}
         </Setting>

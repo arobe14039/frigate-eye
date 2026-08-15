@@ -52,7 +52,7 @@ export function EventCard({
         </p>
         <p className="mt-0.5 truncate text-[13px] text-muted">
           {cameraName}
-          {event.zones?.length ? ` · ${titleCase(event.zones[0])}` : ""}
+          {event.zones?.length ? ` · ${titleCase(event.zones[0]!)}` : ""}
         </p>
         <p className="mt-1 text-[12px] text-subtle">{relativeTime(event.startTime)}</p>
       </div>

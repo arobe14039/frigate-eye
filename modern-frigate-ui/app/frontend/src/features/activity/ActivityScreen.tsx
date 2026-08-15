@@ -38,7 +38,7 @@ export function ActivityScreen({
     queryKey: ["events", { quickFilter, cameraFilter, zoneFilter, pages }],
     queryFn: () =>
       api.events({
-        labels: labelFilter,
+        ...(labelFilter ? { labels: labelFilter } : {}),
         cameras: cameraFilter,
         zones: zoneFilter,
         limit: pages * 20,

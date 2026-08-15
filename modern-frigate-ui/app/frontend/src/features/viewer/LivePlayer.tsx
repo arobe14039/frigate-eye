@@ -42,7 +42,7 @@ export function LivePlayer({
   const fallback = (message: string) =>
     setAttempt((previous) => {
       const next = Math.min(previous + 1, candidates.length - 1);
-      setStatus({ kind: candidates[next].kind, message });
+      setStatus({ kind: candidates[next]!.kind, message });
       return next;
     });
 
@@ -77,7 +77,7 @@ export function LivePlayer({
       peer.addTransceiver("video", { direction: "recvonly" });
       peer.addTransceiver("audio", { direction: "recvonly" });
       peer.ontrack = (event) => {
-        video.srcObject = event.streams[0];
+        video.srcObject = event.streams[0] ?? null;
         void video.play().catch(() => undefined);
         clearTimeout(timeout);
         setStatus({ kind: "webrtc" });

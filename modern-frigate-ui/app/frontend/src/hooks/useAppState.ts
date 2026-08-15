@@ -8,7 +8,7 @@ import type { TabKey } from "../types";
 export type Route = { tab: TabKey; camera?: string; event?: string };
 
 const parse = (hash: string): Route => {
-  const path = hash.replace(/^#\/?/, "").split("?")[0];
+  const path = hash.replace(/^#\/?/, "").split("?")[0] ?? "";
   const [first, second] = path.split("/");
   if (first === "camera" && second) return { tab: "cameras", camera: decodeURIComponent(second) };
   if (first === "event" && second) return { tab: "activity", event: decodeURIComponent(second) };
