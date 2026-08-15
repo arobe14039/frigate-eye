@@ -35,6 +35,14 @@ export const socketUrl = (path: string) => {
  */
 let backendUp: boolean | null = null;
 let probe: Promise<boolean> | null = null;
+let demoMode = false;
+
+/**
+ * True when real media cannot be served: either no backend at all, or the
+ * backend is up but Frigate is unreachable (then API calls already fell back
+ * to demo data, so demo frames must be used as well).
+ */
+const useDemoMedia = () => backendUp !== true || demoMode;
 
 const probeBackend = () => {
   probe ??= fetch(apiUrl("api/status"), { headers: { accept: "application/json" } })
@@ -50,26 +58,25 @@ const probeBackend = () => {
 
 /** Media URLs always point at our own backend, never at Frigate. */
 export const cameraPreviewUrl = (cameraId: string, height = 360, bust?: number) =>
-  backendUp !== true
+  useDemoMedia()
     ? demoImageFor(cameraId)
     : apiUrl(`api/cameras/${encodeURIComponent(cameraId)}/preview?h=${height}${bust ? `&t=${bust}` : ""}`);
 
 export const eventThumbnailUrl = (eventId: string, camera?: string) =>
-  backendUp !== true
+  useDemoMedia()
     ? demoImageFor(camera ?? "")
     : apiUrl(`api/events/${encodeURIComponent(eventId)}/thumbnail`);
 
 export const eventSnapshotUrl = (eventId: string, camera?: string) =>
-  backendUp !== true
+  useDemoMedia()
     ? demoImageFor(camera ?? "")
     : apiUrl(`api/events/${encodeURIComponent(eventId)}/snapshot`);
 
 export const recordingFrameUrl = (cameraId: string, timestamp: number) =>
-  backendUp !== true
+  useDemoMedia()
     ? demoImageFor(cameraId)
     : apiUrl(`api/recordings/${encodeURIComponent(cameraId)}/frame/${Math.floor(timestamp)}`);
 
-let demoMode = false;
 export const isDemoMode = () => demoMode;
 
 /** Resolves false when no add-on backend is behind this page. */
@@ -102,7 +109,11 @@ export const api = {
     probe = null;
     if (!(await probeBackend())) return { connected: false, error: "Backend unreachable" };
     try {
-      const response = await fetch(apiUrl("api/status/test"), { method: "POST" });
+      const response = await fetch(apiUrl("api/status/test"), {
+        method: "POST",
+        headers: { "content-type": "application/json", accept: "application/json" },
+        body: "{}",
+      });
       return (await response.json()) as { connected: boolean; error?: string };
     } catch {
       return { connected: false, error: "Backend unreachable" };
