@@ -70,7 +70,22 @@ export const demo = {
     },
     homeAssistant: { available: false, connected: false },
   }),
+  diagnostics: (): Diagnostics => ({
+    ports: [
+      { label: "Frigate API", port: 5000, required: true, ok: false, detail: "Demo mode" },
+      { label: "go2rtc (live video)", port: 1984, required: false, ok: false, detail: "Demo mode" },
+    ],
+    liveVia: null,
+    streamCount: 0,
+    go2rtcStreams: [],
+    cameraStreams: DEMO_CAMERAS.map((camera) => ({
+      camera: camera.id,
+      streamName: camera.id,
+      matched: false,
+    })),
+  }),
   cameras: (): Camera[] =>
+
     DEMO_CAMERAS.map((camera, index) => ({
       id: camera.id,
       name: camera.id,
