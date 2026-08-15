@@ -1,8 +1,4 @@
-@import "tailwindcss" source(none);
-@source "../src";
-/* The production UI lives in the Home Assistant add-on frontend; the Lovable
-   preview renders the exact same components, so Tailwind scans that tree too. */
-@source "../modern-frigate-ui/app/frontend/src";
+@import "tailwindcss";
 
 /*
  * Modern Frigate UI design system.
@@ -26,8 +22,7 @@
   --radius-card: 1.25rem;
   --radius-pill: 999px;
 
-  --shadow-lift:
-    0 1px 0 0 oklch(1 0 0 / 0.05) inset, 0 18px 40px -24px oklch(0 0 0 / 0.9);
+  --shadow-lift: 0 1px 0 0 oklch(1 0 0 / 0.05) inset, 0 18px 40px -24px oklch(0 0 0 / 0.9);
 
   --ease-smooth: cubic-bezier(0.22, 1, 0.36, 1);
 }
