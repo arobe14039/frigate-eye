@@ -34,6 +34,7 @@ export async function registerLive(app: FastifyInstance) {
   };
 
   const relay = (mode: "webrtc" | "mse") => async (connection: any, request: any) => {
+    const maxBufferedBytes = 4 * 1024 * 1024;
     const client: WebSocket = connection.socket ?? connection;
     const src = String((request.params as any).stream ?? "");
     const quality = parseQuality((request.query as any)?.q);
@@ -69,10 +70,16 @@ export async function registerLive(app: FastifyInstance) {
       }
     });
     upstream.on("message", (data: unknown, isBinary: boolean) => {
-      if (client.readyState === 1) client.send(data as any, { binary: isBinary });
+      if (client.readyState === 1 && client.bufferedAmount < maxBufferedBytes) {
+        client.send(data as any, { binary: isBinary });
+      } else if (client.bufferedAmount >= maxBufferedBytes) {
+        closeBoth("client_backpressure");
+      }
     });
     client.on("message", (data: any, isBinary: boolean) => {
-      if (upstream.readyState === 1) upstream.send(data, { binary: isBinary });
+      if (upstream.readyState === 1 && upstream.bufferedAmount < maxBufferedBytes) {
+        upstream.send(data, { binary: isBinary });
+      }
       else if (upstream.readyState === 0 && pending.length < 32) {
         pending.push({ data, binary: isBinary });
       }

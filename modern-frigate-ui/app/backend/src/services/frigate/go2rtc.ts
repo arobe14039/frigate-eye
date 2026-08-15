@@ -202,5 +202,5 @@ export async function resolveStreamSrc(
 
 /** Normalise a `q` query value onto a quality tier. */
 export function parseQuality(value: unknown): StreamQuality {
-  return value === "low" || value === "medium" ? value : "high";
+  return value === "low" || value === "high" ? value : "medium";
 }

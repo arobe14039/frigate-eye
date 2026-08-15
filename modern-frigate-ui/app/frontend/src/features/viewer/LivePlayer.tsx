@@ -163,6 +163,7 @@ export function LivePlayer({
       void video.play().catch(() => undefined);
     };
     peer.oniceconnectionstatechange = () => {
+      if (closed) return;
       if (peer.iceConnectionState === "connected" || peer.iceConnectionState === "completed") {
         connected = true;
         clearTimeout(timeout);
@@ -176,6 +177,7 @@ export function LivePlayer({
     };
     // Trickle ICE — go2rtc accepts candidates as they are discovered.
     peer.onicecandidate = (event) => {
+      if (closed) return;
       if (socket.readyState === 1) {
         socket.send(
           JSON.stringify({ type: "webrtc/candidate", value: event.candidate?.candidate ?? "" }),
@@ -186,24 +188,30 @@ export function LivePlayer({
     socket.onopen = async () => {
       try {
         const offer = await peer.createOffer();
+        if (closed) return;
         await peer.setLocalDescription(offer);
+        if (closed) return;
         socket.send(JSON.stringify({ type: "webrtc/offer", value: peer.localDescription?.sdp }));
       } catch (error) {
         console.warn("[live] webrtc offer failed", error);
         fail("WebRTC negotiation failed");
       }
     };
-    socket.onerror = () => fail("WebRTC relay unreachable");
+    socket.onerror = () => {
+      if (!closed) fail("WebRTC relay unreachable");
+    };
     socket.onclose = (event) => {
       if (!closed && peer.iceConnectionState !== "connected") {
         fail(`WebRTC relay closed (${event.code})`);
       }
     };
     socket.onmessage = async (message) => {
+      if (closed) return;
       try {
         const payload = JSON.parse(message.data);
         if (payload.type === "webrtc/answer") {
           await peer.setRemoteDescription({ type: "answer", sdp: payload.value });
+          if (closed) return;
         } else if (payload.type === "webrtc/candidate" && payload.value) {
           await peer.addIceCandidate({ candidate: payload.value, sdpMid: "0" }).catch(() => undefined);
         } else if (payload.type === "error") {
