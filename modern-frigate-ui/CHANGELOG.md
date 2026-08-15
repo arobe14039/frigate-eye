@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.3
+
+- Fixed live video: go2rtc stream names are now resolved from go2rtc's own stream list instead of assumed from the camera name (the cause of the 404s on every WebRTC/MSE/HLS request).
+- Added a reliable MJPEG fallback that uses Frigate's built-in camera feed when go2rtc has no stream configured, so live view works out of the box.
+- Settings now shows a "Ports & live streaming" panel with required ports (5000, 1984), their live status, the active live path, and which cameras have a go2rtc stream.
+- Fixed the Frigate version (served as plain text, not JSON) and detection fps readouts in Settings.
+
 ## 0.1.2
 
 - Rebuilt live playback: go2rtc is now discovered explicitly (direct port 1984,
