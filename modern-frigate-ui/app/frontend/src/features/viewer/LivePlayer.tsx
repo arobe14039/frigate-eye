@@ -277,7 +277,6 @@ export function LivePlayer({
         backBufferLength: 10,
         maxBufferLength: 6,
         liveSyncDurationCount: 2,
-avoidLevelSwitching: false as never,
       } as any);
       hls.on(Hls.Events.ERROR, (_event, data) => {
         console.warn("[live] hls error", data.type, data.details);

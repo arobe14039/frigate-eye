@@ -10,7 +10,7 @@ export interface Camera {
   lastUpdated?: number;
 }
 
-export type StreamKind = "webrtc" | "mse" | "hls" | "preview";
+export type StreamKind = "webrtc" | "mse" | "hls" | "mjpeg" | "preview";
 
 export interface StreamOption {
   kind: StreamKind;
