@@ -78,6 +78,10 @@ export function SettingsScreen({
         ) : null}
       </Group>
 
+      <PortsGroup />
+
+
+
       <Group title="Interface">
         <Setting label="Camera grid">
           {(["comfortable", "compact"] as const).map((value) => (
