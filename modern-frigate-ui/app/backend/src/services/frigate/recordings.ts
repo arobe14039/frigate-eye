@@ -33,3 +33,35 @@ export async function getTimeline(camera: string, after: number, before: number)
   ]);
   return { camera, after, before, segments, events };
 }
+
+/**
+ * Snap a requested instant onto recorded video.
+ *
+ * Frigate answers a VOD request for a gap with an empty playlist, so the
+ * playhead is moved to the nearest recorded moment (inside the segment when the
+ * instant is covered, otherwise the closest segment edge within the window).
+ */
+export async function snapToRecording(camera: string, atMs: number, windowMs = 30 * 60_000) {
+  const segments = await listRecordings(camera, atMs - windowMs, atMs + windowMs).catch(
+    () => [] as RecordingSegment[],
+  );
+  if (!segments.length) return { time: atMs, available: false, segment: null };
+
+  const covering = segments.find((s) => atMs >= s.startTime && atMs <= s.endTime);
+  if (covering) return { time: atMs, available: true, segment: covering };
+
+  const nearest = segments.reduce((best, segment) => {
+    const distance = Math.min(
+      Math.abs(segment.startTime - atMs),
+      Math.abs(segment.endTime - atMs),
+    );
+    const bestDistance = Math.min(
+      Math.abs(best.startTime - atMs),
+      Math.abs(best.endTime - atMs),
+    );
+    return distance < bestDistance ? segment : best;
+  }, segments[0]!);
+
+  const time = atMs < nearest.startTime ? nearest.startTime : nearest.endTime - 1_000;
+  return { time, available: true, segment: nearest };
+}
