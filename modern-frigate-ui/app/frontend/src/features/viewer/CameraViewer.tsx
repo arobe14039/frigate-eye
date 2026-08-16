@@ -178,9 +178,7 @@ export function CameraViewer({
             aria-label="Favorite"
             className="grid size-11 place-items-center rounded-full active:bg-surface"
           >
-            <Star
-              className={`size-5 ${isFavorite ? "fill-detect text-detect" : "text-muted"}`}
-            />
+            <Star className={`size-5 ${isFavorite ? "fill-detect text-detect" : "text-muted"}`} />
           </button>
           <button
             type="button"
@@ -325,13 +323,13 @@ export function CameraViewer({
                 </button>
               ))
             : SPEEDS.map((option) => (
-            <button
-              key={option}
-              type="button"
-              onClick={() => setSpeed(option)}
-              className={`h-8 rounded-pill px-2.5 text-[12px] font-medium transition-colors ${
-                speed === option ? "bg-accent text-background" : "text-muted"
-              }`}
+                <button
+                  key={option}
+                  type="button"
+                  onClick={() => setSpeed(option)}
+                  className={`h-8 rounded-pill px-2.5 text-[12px] font-medium transition-colors ${
+                    speed === option ? "bg-accent text-background" : "text-muted"
+                  }`}
                 >
                   {option}x
                 </button>
@@ -439,7 +437,9 @@ export function CameraViewer({
             {selected.zones?.length ? (
               <Row label="Zones" value={selected.zones.map(titleCase).join(", ")} />
             ) : null}
-            {selected.subLabel ? <Row label="Recognised" value={titleCase(selected.subLabel)} /> : null}
+            {selected.subLabel ? (
+              <Row label="Recognised" value={titleCase(selected.subLabel)} />
+            ) : null}
             {typeof selected.score === "number" ? (
               <Row label="Confidence" value={`${Math.round(selected.score * 100)}%`} />
             ) : null}

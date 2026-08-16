@@ -1,6 +1,12 @@
 import Hls from "hls.js";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, eventClipUrl, eventVodUrl, recordingFrameUrl, vodPlaylistUrl } from "../../services/api";
+import {
+  api,
+  eventClipUrl,
+  eventVodUrl,
+  recordingFrameUrl,
+  vodPlaylistUrl,
+} from "../../services/api";
 import type { DetectionEvent, PlaybackWindow } from "../../types";
 import type { LiveStatus } from "./LivePlayer";
 
@@ -13,8 +19,7 @@ const WINDOW_MS = 300_000;
 const SEEK_EPSILON = 0.6;
 
 type Source =
-  | { kind: "hls"; src: string; baseTime: number }
-  | { kind: "mp4"; src: string; baseTime: number };
+  { kind: "hls"; src: string; baseTime: number } | { kind: "mp4"; src: string; baseTime: number };
 
 /**
  * Historical playback.
@@ -95,11 +100,7 @@ export function RecordedPlayer({
   // Load (or reload) the surrounding window when the playhead leaves it.
   useEffect(() => {
     if (event) return;
-    if (
-      !window_ ||
-      target < window_.start + 500 ||
-      target > window_.end - EDGE_MS
-    ) {
+    if (!window_ || target < window_.start + 500 || target > window_.end - EDGE_MS) {
       void loadWindow(target);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -125,7 +126,11 @@ export function RecordedPlayer({
 
     const seekToTarget = () => {
       const offset = (targetRef.current - source.baseTime) / 1000;
-      if (Number.isFinite(offset) && offset > 0 && Math.abs(video.currentTime - offset) > SEEK_EPSILON) {
+      if (
+        Number.isFinite(offset) &&
+        offset > 0 &&
+        Math.abs(video.currentTime - offset) > SEEK_EPSILON
+      ) {
         try {
           video.currentTime = offset;
         } catch {
