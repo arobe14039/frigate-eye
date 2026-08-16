@@ -165,10 +165,11 @@ export function RecordedPlayer({
         backBufferLength: 30,
         manifestLoadingMaxRetry: 2,
         fragLoadingMaxRetry: 3,
-      } as any);
-      hls.on(Hls.Events.ERROR, (_event: unknown, data: any) => {
+      });
+      hls.on(Hls.Events.ERROR, (_event, data: ErrorData) => {
         if (data.fatal) fail(`Recording error (${data.details})`);
       });
+
       hls.loadSource(source.src);
       hls.attachMedia(video);
     } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
