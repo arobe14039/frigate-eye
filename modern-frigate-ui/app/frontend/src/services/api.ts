@@ -150,6 +150,8 @@ export const api = {
     search.set("limit", String(params.limit ?? 25));
     return getJson<DetectionEvent[]>(`api/events?${search.toString()}`, () => demo.events(params));
   },
+  event: (id: string) =>
+    getJson<DetectionEvent | null>(`api/events/${encodeURIComponent(id)}`, () => null),
   playbackWindow: (camera: string, at: number, windowMs = 300_000) =>
     getJson<PlaybackWindow>(
       `api/playback/${encodeURIComponent(camera)}/window?at=${Math.floor(at)}&window=${Math.floor(windowMs)}`,

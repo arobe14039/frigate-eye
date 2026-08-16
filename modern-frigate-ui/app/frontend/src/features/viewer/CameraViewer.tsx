@@ -110,6 +110,23 @@ export function CameraViewer({
     queryFn: () => api.events({ cameras: [cameraId], limit: 12 }),
   });
 
+  // Deep link straight into an event: play that detection instead of live.
+  const initialEvent = useQuery({
+    queryKey: ["event", initialEventId],
+    queryFn: () => api.event(initialEventId!),
+    enabled: Boolean(initialEventId),
+  });
+
+  useEffect(() => {
+    const event = initialEvent.data;
+    if (!event) return;
+    setLive(false);
+    setPlaybackEvent(event);
+    setPlayhead(event.startTime - 4_000);
+    setSettled(event.startTime - 4_000);
+    setPlaying(true);
+  }, [initialEvent.data]);
+
   // Keep the live edge moving while nothing is being scrubbed.
   useEffect(() => {
     if (!live) return;

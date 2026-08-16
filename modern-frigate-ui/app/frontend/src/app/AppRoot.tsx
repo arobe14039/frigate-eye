@@ -25,7 +25,12 @@ export function AppRoot() {
   const { activeCameras } = useDetectionStream();
   const prefs = preferences ?? FALLBACK_PREFERENCES;
 
-  const openCamera = (cameraId: string) => navigate(`camera/${encodeURIComponent(cameraId)}`);
+  const openCamera = (cameraId: string, eventId?: string) =>
+    navigate(
+      eventId
+        ? `camera/${encodeURIComponent(cameraId)}/event/${encodeURIComponent(eventId)}`
+        : `camera/${encodeURIComponent(cameraId)}`,
+    );
 
   return (
     <div className="mx-auto min-h-dvh max-w-2xl">
@@ -56,6 +61,7 @@ export function AppRoot() {
       {route.camera ? (
         <CameraViewer
           cameraId={route.camera}
+          initialEventId={route.event}
           preferences={prefs}
           isFavorite={prefs.favorites.includes(route.camera)}
           onToggleFavorite={() => toggleFavorite(route.camera!)}

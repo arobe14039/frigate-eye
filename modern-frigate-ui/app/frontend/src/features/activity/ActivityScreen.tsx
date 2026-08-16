@@ -230,13 +230,13 @@ export function ActivityScreen({
               <button
                 type="button"
                 onClick={() => {
-                  const camera = selected.camera;
+                  const { camera, id } = selected;
                   setSelected(null);
-                  onOpenCamera(camera);
+                  onOpenCamera(camera, id);
                 }}
                 className="h-12 rounded-2xl bg-accent text-[14px] font-semibold text-background"
               >
-                View footage
+                Play clip
               </button>
               <button
                 type="button"
