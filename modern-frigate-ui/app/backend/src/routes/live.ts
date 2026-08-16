@@ -1,10 +1,10 @@
 import type { FastifyInstance } from "fastify";
-import { Readable } from "node:stream";
-import { pipeline } from "node:stream/promises";
 import WebSocket from "ws";
 import { resolveFrigateBase } from "../services/frigate/client.js";
+import { createPipe } from "../services/httpProxy.js";
 import { parseQuality, resolveGo2rtc, resolveStreamSrc } from "../services/frigate/go2rtc.js";
 import type { StreamQuality } from "../services/frigate/go2rtc.js";
+
 
 
 /**
