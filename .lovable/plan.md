@@ -63,3 +63,10 @@ New `src/features/viewer/RecordedPlayer.tsx` — a sibling to `LivePlayer` with 
 ## Version
 
 Bump the add-on to **0.2.0** and add a CHANGELOG entry so it can be updated from Home Assistant.
+
+## Pre-work: fix existing type errors
+
+`LivePlayer.tsx` currently fails typecheck (4 errors) because optional `LiveStatus`
+fields (`width`, `height`, `message`) are assigned `undefined` under
+`exactOptionalPropertyTypes`. Fix by widening those fields to `number | undefined` /
+`string | undefined` in the `LiveStatus` type before the playback work lands.
