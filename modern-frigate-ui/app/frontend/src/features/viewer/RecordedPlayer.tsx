@@ -1,4 +1,4 @@
-import Hls from "hls.js";
+import Hls, { type ErrorData } from "hls.js";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   api,
