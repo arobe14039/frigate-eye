@@ -140,7 +140,7 @@ export function RecordedPlayer({
     };
     const onPlaying = () =>
       setStatus({
-        kind: source.kind === "mp4" ? "hls" : "hls",
+        kind: "hls",
         phase: "playing",
         width: video.videoWidth || undefined,
         height: video.videoHeight || undefined,
@@ -235,7 +235,7 @@ export function RecordedPlayer({
       playsInline
       muted={muted}
       preload="metadata"
-      poster={recordingFrameUrl(cameraId, target)}
+      poster={recordingFrameUrl(cameraId, source?.baseTime ?? target)}
       data-clock={clock}
       className="size-full bg-background object-contain"
     />
