@@ -14,7 +14,7 @@ export function ActivityScreen({
   onOpenCamera,
 }: {
   preferences: Preferences;
-  onOpenCamera: (cameraId: string) => void;
+  onOpenCamera: (cameraId: string, eventId?: string) => void;
 }) {
   const [quickFilter, setQuickFilter] = useState<string>(preferences.defaultFilter);
   const [cameraFilter, setCameraFilter] = useState<string[]>([]);
@@ -230,13 +230,13 @@ export function ActivityScreen({
               <button
                 type="button"
                 onClick={() => {
-                  const camera = selected.camera;
+                  const { camera, id } = selected;
                   setSelected(null);
-                  onOpenCamera(camera);
+                  onOpenCamera(camera, id);
                 }}
                 className="h-12 rounded-2xl bg-accent text-[14px] font-semibold text-background"
               >
-                View footage
+                Play clip
               </button>
               <button
                 type="button"

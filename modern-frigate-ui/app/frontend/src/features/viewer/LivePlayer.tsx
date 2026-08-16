@@ -12,10 +12,11 @@ const withQuality = (path: string, quality: StreamQuality) =>
 export type LiveStatus = {
   kind: StreamOption["kind"];
   phase: "connecting" | "playing" | "failed";
-  message?: string;
-  width?: number;
-  height?: number;
+  message?: string | undefined;
+  width?: number | undefined;
+  height?: number | undefined;
 };
+
 
 const log = (...args: unknown[]) => console.info("[live]", ...args);
 

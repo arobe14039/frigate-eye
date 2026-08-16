@@ -9,8 +9,13 @@ export type Route = { tab: TabKey; camera?: string; event?: string };
 
 const parse = (hash: string): Route => {
   const path = hash.replace(/^#\/?/, "").split("?")[0] ?? "";
-  const [first, second] = path.split("/");
-  if (first === "camera" && second) return { tab: "cameras", camera: decodeURIComponent(second) };
+  const [first, second, third, fourth] = path.split("/");
+  if (first === "camera" && second) {
+    const camera = decodeURIComponent(second);
+    return third === "event" && fourth
+      ? { tab: "cameras", camera, event: decodeURIComponent(fourth) }
+      : { tab: "cameras", camera };
+  }
   if (first === "event" && second) return { tab: "activity", event: decodeURIComponent(second) };
   const tabs: TabKey[] = ["home", "activity", "cameras", "settings"];
   return { tab: tabs.includes(first as TabKey) ? (first as TabKey) : "home" };

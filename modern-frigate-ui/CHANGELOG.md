@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.0
+
+- Historical playback: the scrub timeline and detection markers now play real recorded video instead of a single still frame, using Frigate's native VOD (HLS) recordings — no transcoding and no export wait.
+- New backend playback proxy (`/api/playback/...`): camera VOD windows, event VOD, and single-file event clips with `Range` passthrough; segments are cached immutably so seeking backwards is instant.
+- Playhead requests are snapped onto actually recorded video, so scrubbing into a gap no longer loads an empty stream.
+- Scrubbing inside the loaded window is a plain seek (zero extra requests); a cheap preview frame is shown during the drag and the video takes over once the gesture settles.
+- Play/pause and the 0.5x–4x speed buttons now drive real playback, and the timeline playhead follows the video.
+- Activity events open directly into their clip ("Play clip"), with a fallback ladder of VOD HLS → event clip.mp4 → still frame.
+
 ## 0.1.8
 
 - Fixed dropped WebRTC/MSE negotiation messages by buffering browser messages until the upstream go2rtc socket is open.

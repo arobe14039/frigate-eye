@@ -48,6 +48,16 @@ export interface RecordingSegment {
   objects?: number;
 }
 
+export interface PlaybackWindow {
+  camera: string;
+  available: boolean;
+  /** Requested instant, snapped onto recorded video. */
+  time: number;
+  start: number;
+  end: number;
+  playlist: string;
+}
+
 export interface TimelineData {
   camera: string;
   after: number;

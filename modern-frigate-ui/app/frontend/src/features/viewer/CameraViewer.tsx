@@ -18,6 +18,7 @@ import type { DetectionEvent, Preferences, StreamQuality } from "../../types";
 import { clockTime, durationLabel, titleCase } from "../../utils/format";
 import { Timeline, ZOOM_WINDOWS } from "../timeline/Timeline";
 import { LivePlayer, type LiveStatus } from "./LivePlayer";
+import { RecordedPlayer } from "./RecordedPlayer";
 
 const SPEEDS = [0.5, 1, 2, 4];
 
@@ -59,6 +60,7 @@ function qualityLabel(height: number) {
 
 export function CameraViewer({
   cameraId,
+  initialEventId,
   preferences,
   isFavorite,
   onToggleFavorite,
@@ -66,13 +68,16 @@ export function CameraViewer({
   onClose,
 }: {
   cameraId: string;
+  initialEventId?: string | undefined;
   preferences: Preferences;
   isFavorite: boolean;
   onToggleFavorite: () => void;
   onZoomChange: (zoom: Preferences["timelineZoom"]) => void;
   onClose: () => void;
 }) {
-  const [live, setLive] = useState(true);
+  const [live, setLive] = useState(!initialEventId);
+  // The event currently being played back (null = plain timeline playback).
+  const [playbackEvent, setPlaybackEvent] = useState<DetectionEvent | null>(null);
   const [playhead, setPlayhead] = useState(() => Date.now());
   const [settled, setSettled] = useState<number | null>(null);
   const [playing, setPlaying] = useState(true);
@@ -85,6 +90,7 @@ export function CameraViewer({
     kind: "preview",
     phase: "connecting",
   });
+  const [dragging, setDragging] = useState(false);
   const shellRef = useRef<HTMLDivElement | null>(null);
 
   const camera = useQuery({
@@ -104,6 +110,23 @@ export function CameraViewer({
     queryFn: () => api.events({ cameras: [cameraId], limit: 12 }),
   });
 
+  // Deep link straight into an event: play that detection instead of live.
+  const initialEvent = useQuery({
+    queryKey: ["event", initialEventId],
+    queryFn: () => api.event(initialEventId!),
+    enabled: Boolean(initialEventId),
+  });
+
+  useEffect(() => {
+    const event = initialEvent.data;
+    if (!event) return;
+    setLive(false);
+    setPlaybackEvent(event);
+    setPlayhead(event.startTime - 4_000);
+    setSettled(event.startTime - 4_000);
+    setPlaying(true);
+  }, [initialEvent.data]);
+
   // Keep the live edge moving while nothing is being scrubbed.
   useEffect(() => {
     if (!live) return;
@@ -122,11 +145,14 @@ export function CameraViewer({
 
   const scrub = (time: number) => {
     setLive(false);
+    setDragging(true);
+    setPlaybackEvent(null);
     setPlayhead(time);
   };
 
   const jumpToLive = () => {
     setLive(true);
+    setPlaybackEvent(null);
     setSettled(null);
     setPlayhead(Date.now());
   };
@@ -152,9 +178,7 @@ export function CameraViewer({
             aria-label="Favorite"
             className="grid size-11 place-items-center rounded-full active:bg-surface"
           >
-            <Star
-              className={`size-5 ${isFavorite ? "fill-detect text-detect" : "text-muted"}`}
-            />
+            <Star className={`size-5 ${isFavorite ? "fill-detect text-detect" : "text-muted"}`} />
           </button>
           <button
             type="button"
@@ -176,11 +200,27 @@ export function CameraViewer({
             muted={muted}
             onStatus={setStreamStatus}
           />
-        ) : (
+        ) : dragging ? (
+          // Cheap still frame while the gesture is in flight — the video only
+          // loads once the scrub settles.
           <img
-            src={recordingFrameUrl(cameraId, settled ?? playhead)}
+            src={recordingFrameUrl(cameraId, playhead)}
             alt={`${displayName} at ${clockTime(playhead, preferences.clock, true)}`}
             className="size-full object-contain"
+          />
+        ) : (
+          <RecordedPlayer
+            cameraId={cameraId}
+            event={playbackEvent}
+            target={settled ?? playhead}
+            playing={playing}
+            speed={speed}
+            muted={muted}
+            onStatus={setStreamStatus}
+            onTime={(time) => {
+              setPlayhead(time);
+              setSettled(time);
+            }}
           />
         )}
 
@@ -205,7 +245,7 @@ export function CameraViewer({
           )}
         </div>
 
-        {live && streamStatus.phase === "playing" ? (
+        {streamStatus.phase === "playing" ? (
           <span className="absolute right-3 bottom-3 flex items-center gap-1.5 rounded-pill bg-background/65 px-2.5 py-1 text-[11px] font-medium text-foreground backdrop-blur">
             <span className="font-semibold tracking-wide uppercase">
               {STREAM_LABELS[streamStatus.kind]}
@@ -216,14 +256,18 @@ export function CameraViewer({
           </span>
         ) : null}
 
-        {live && streamStatus.phase !== "playing" ? (
+        {streamStatus.phase !== "playing" && !dragging ? (
           <div className="absolute inset-0 grid place-items-center bg-background/45 backdrop-blur-[2px]">
             <div className="flex flex-col items-center gap-2.5">
               <Loader2 className="size-7 animate-spin text-accent" />
               <p className="text-[12px] text-muted">
                 {streamStatus.phase === "failed"
-                  ? "Live stream unavailable — showing latest preview"
-                  : `Connecting ${STREAM_LABELS[streamStatus.kind]} stream…`}
+                  ? live
+                    ? "Live stream unavailable — showing latest preview"
+                    : "No recorded video at this moment — showing the nearest frame"
+                  : live
+                    ? `Connecting ${STREAM_LABELS[streamStatus.kind]} stream…`
+                    : "Loading recording…"}
               </p>
               {streamStatus.message && streamStatus.phase !== "failed" ? (
                 <p className="max-w-[70%] text-center text-[11px] text-subtle">
@@ -279,13 +323,13 @@ export function CameraViewer({
                 </button>
               ))
             : SPEEDS.map((option) => (
-            <button
-              key={option}
-              type="button"
-              onClick={() => setSpeed(option)}
-              className={`h-8 rounded-pill px-2.5 text-[12px] font-medium transition-colors ${
-                speed === option ? "bg-accent text-background" : "text-muted"
-              }`}
+                <button
+                  key={option}
+                  type="button"
+                  onClick={() => setSpeed(option)}
+                  className={`h-8 rounded-pill px-2.5 text-[12px] font-medium transition-colors ${
+                    speed === option ? "bg-accent text-background" : "text-muted"
+                  }`}
                 >
                   {option}x
                 </button>
@@ -301,14 +345,20 @@ export function CameraViewer({
         segments={timeline.data?.segments ?? []}
         events={timeline.data?.events ?? []}
         onScrub={scrub}
-        onSettle={(time) => setSettled(time)}
+        onSettle={(time) => {
+          setDragging(false);
+          setSettled(time);
+        }}
         onZoomChange={onZoomChange}
         onSelectEvent={(event) => {
           // Start a moment before the detection, then load that recording.
           const start = event.startTime - 4_000;
           setLive(false);
+          setDragging(false);
           setPlayhead(start);
           setSettled(start);
+          setPlaybackEvent(event);
+          setPlaying(true);
           setSelected(event);
         }}
       />
@@ -326,8 +376,11 @@ export function CameraViewer({
                   type="button"
                   onClick={() => {
                     setLive(false);
+                    setDragging(false);
                     setPlayhead(event.startTime - 4_000);
                     setSettled(event.startTime - 4_000);
+                    setPlaybackEvent(event);
+                    setPlaying(true);
                     setSelected(event);
                   }}
                   className="flex w-full items-center justify-between rounded-2xl bg-surface px-4 py-3 text-left active:bg-surface-2"
@@ -384,7 +437,9 @@ export function CameraViewer({
             {selected.zones?.length ? (
               <Row label="Zones" value={selected.zones.map(titleCase).join(", ")} />
             ) : null}
-            {selected.subLabel ? <Row label="Recognised" value={titleCase(selected.subLabel)} /> : null}
+            {selected.subLabel ? (
+              <Row label="Recognised" value={titleCase(selected.subLabel)} />
+            ) : null}
             {typeof selected.score === "number" ? (
               <Row label="Confidence" value={`${Math.round(selected.score * 100)}%`} />
             ) : null}

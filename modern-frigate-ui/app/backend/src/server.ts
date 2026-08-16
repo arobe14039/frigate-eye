@@ -6,6 +6,7 @@ import { resolve } from "node:path";
 import { config } from "./config.js";
 import { registerApi } from "./routes/api.js";
 import { registerLive } from "./routes/live.js";
+import { registerPlayback } from "./routes/playback.js";
 import { resolveFrigateBase } from "./services/frigate/client.js";
 
 const app = Fastify({ logger: { level: config.logLevel as any }, trustProxy: true });
@@ -25,6 +26,7 @@ app.addContentTypeParser("*", { parseAs: "buffer" }, (_request, body: Buffer, do
 await app.register(websocket, { options: { maxPayload: 8 * 1024 * 1024 } });
 await registerApi(app);
 await registerLive(app);
+await registerPlayback(app);
 
 // Supervisor watchdog target — must answer even when Frigate is down.
 app.get("/health", async () => ({ status: "ok", version: config.version }));
