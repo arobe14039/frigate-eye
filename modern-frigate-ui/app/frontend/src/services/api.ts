@@ -5,6 +5,7 @@ import type {
   Camera,
   CameraDetail,
   DetectionEvent,
+  PlaybackWindow,
   Preferences,
   TimelineData,
 } from "../types";
@@ -78,6 +79,15 @@ export const recordingFrameUrl = (cameraId: string, timestamp: number) =>
     ? demoImageFor(cameraId)
     : apiUrl(`api/recordings/${encodeURIComponent(cameraId)}/frame/${Math.floor(timestamp)}`);
 
+/** Recorded playback URLs — Frigate VOD, proxied by our backend. */
+export const vodPlaylistUrl = (playlist: string) => apiUrl(playlist);
+
+export const eventVodUrl = (eventId: string) =>
+  apiUrl(`api/playback/event/${encodeURIComponent(eventId)}/vod/index.m3u8`);
+
+export const eventClipUrl = (eventId: string) =>
+  apiUrl(`api/playback/event/${encodeURIComponent(eventId)}/clip.mp4`);
+
 export const isDemoMode = () => demoMode;
 
 /** Resolves false when no add-on backend is behind this page. */
@@ -140,6 +150,18 @@ export const api = {
     search.set("limit", String(params.limit ?? 25));
     return getJson<DetectionEvent[]>(`api/events?${search.toString()}`, () => demo.events(params));
   },
+  playbackWindow: (camera: string, at: number, windowMs = 300_000) =>
+    getJson<PlaybackWindow>(
+      `api/playback/${encodeURIComponent(camera)}/window?at=${Math.floor(at)}&window=${Math.floor(windowMs)}`,
+      () => ({
+        camera,
+        available: false,
+        time: at,
+        start: at,
+        end: at + windowMs,
+        playlist: "",
+      }),
+    ),
   timeline: (camera: string, after: number, before: number) =>
     getJson<TimelineData>(
       `api/timeline/${encodeURIComponent(camera)}?after=${Math.floor(after)}&before=${Math.floor(before)}`,
