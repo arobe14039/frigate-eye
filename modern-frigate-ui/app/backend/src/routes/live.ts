@@ -99,46 +99,9 @@ export async function registerLive(app: FastifyInstance) {
   app.get("/api/live/:stream/webrtc", { websocket: true }, relay("webrtc"));
   app.get("/api/live/:stream/mse", { websocket: true }, relay("mse"));
 
-  /**
-   * Stream an upstream response body through untouched.
-   * The body is a Web ReadableStream, which Fastify cannot send directly —
-   * it must be converted to a Node stream, otherwise `reply.send` throws and
-   * the caller ends up trying to send a second (already-sent) reply.
-   */
-  const pipe = async (url: string, reply: any, log: Record<string, unknown>) => {
-    const abort = new AbortController();
-    const headerTimeout = setTimeout(() => abort.abort(new Error("upstream headers timed out")), 8_000);
-    const onClientClose = () => abort.abort(new Error("client disconnected"));
-    reply.raw.once("close", onClientClose);
-    try {
-      const upstream = await fetch(url, { headers: { accept: "*/*" }, signal: abort.signal });
-      clearTimeout(headerTimeout);
-      if (!upstream.ok || !upstream.body) {
-        await upstream.body?.cancel().catch(() => undefined);
-        app.log.warn({ ...log, url, status: upstream.status }, "live http: upstream rejected");
-        return null;
-      }
-      reply.raw.statusCode = upstream.status;
-      reply.raw.setHeader(
-        "content-type",
-        upstream.headers.get("content-type") ?? "application/octet-stream",
-      );
-      reply.raw.setHeader("cache-control", "no-store");
-      reply.hijack();
-      await pipeline(Readable.fromWeb(upstream.body as any), reply.raw, { signal: abort.signal });
-      return reply;
-    } catch (error) {
-      const disconnected = reply.raw.destroyed || abort.signal.reason?.message === "client disconnected";
-      if (!disconnected) {
-        app.log.error({ ...log, url, err: (error as Error).message }, "live http: proxy failed");
-      }
-      if (reply.sent || reply.raw.headersSent) return reply;
-      return null;
-    } finally {
-      clearTimeout(headerTimeout);
-      reply.raw.off("close", onClientClose);
-    }
-  };
+  /** Shared streaming proxy (hijacks the reply, aborts on client disconnect). */
+  const pipe = createPipe(app);
+
 
 
   /** Proxy a go2rtc HTTP endpoint for a camera, resolving its stream name. */
