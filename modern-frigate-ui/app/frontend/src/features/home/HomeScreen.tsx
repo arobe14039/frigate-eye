@@ -15,7 +15,7 @@ export function HomeScreen({
 }: {
   preferences: Preferences;
   activeCameras: Record<string, number>;
-  onOpenCamera: (cameraId: string) => void;
+  onOpenCamera: (cameraId: string, eventId?: string) => void;
   onNavigate: (tab: TabKey) => void;
 }) {
   const status = useQuery({ queryKey: ["status"], queryFn: api.status, refetchInterval: 30_000 });
@@ -108,7 +108,7 @@ export function HomeScreen({
                   cameraName={
                     ordered.find((camera) => camera.id === event.camera)?.displayName ?? event.camera
                   }
-                  onOpen={() => onOpenCamera(event.camera)}
+                  onOpen={() => onOpenCamera(event.camera, event.id)}
                 />
               ))}
         </div>

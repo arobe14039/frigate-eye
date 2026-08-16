@@ -14,7 +14,7 @@ export function ActivityScreen({
   onOpenCamera,
 }: {
   preferences: Preferences;
-  onOpenCamera: (cameraId: string) => void;
+  onOpenCamera: (cameraId: string, eventId?: string) => void;
 }) {
   const [quickFilter, setQuickFilter] = useState<string>(preferences.defaultFilter);
   const [cameraFilter, setCameraFilter] = useState<string[]>([]);
