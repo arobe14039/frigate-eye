@@ -31,51 +31,53 @@ export const socketUrl = (path: string) => {
 };
 
 /**
- * Backend reachability is probed once. Until it answers, media URLs resolve to
- * bundled demo frames so the UI never fires requests we know will fail (the
- * design preview has no add-on backend behind it).
+ * Demo fixtures are a DEVELOPMENT tool only.
+ *
+ * This is a security camera interface: a Frigate or camera outage must never
+ * be papered over with fictional cameras, events or imagery. Demo data is used
+ * only when the build was explicitly created with `VITE_DEMO_MODE=true`, which
+ * never happens for the add-on image. In production a failure surfaces as a
+ * failure.
  */
-let backendUp: boolean | null = null;
-let probe: Promise<boolean> | null = null;
-let demoMode = false;
+export const DEMO_MODE: boolean =
+  (import.meta.env.VITE_DEMO_MODE ?? "") === "true" ||
+  (import.meta.env.VITE_FRIGATE_MOCK ?? "") === "true";
 
-/**
- * True when real media cannot be served: either no backend at all, or the
- * backend is up but Frigate is unreachable (then API calls already fell back
- * to demo data, so demo frames must be used as well).
- */
-const useDemoMedia = () => backendUp !== true || demoMode;
+export const isDemoMode = () => DEMO_MODE;
 
-const probeBackend = () => {
-  probe ??= fetch(apiUrl("api/status"), { headers: { accept: "application/json" } })
-    .then((response) => response.ok && response.headers.get("content-type")?.includes("json") === true)
-    .catch(() => false)
-    .then((ok) => {
-      backendUp = ok;
-      demoMode = !ok;
-      return ok;
-    });
-  return probe;
-};
+/** Thrown for any failed backend call so the UI can show a truthful state. */
+export class ApiError extends Error {
+  constructor(
+    readonly status: number,
+    readonly code: string,
+    message: string,
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
+  /** No backend at all (add-on starting, or a design preview with no server). */
+  get backendUnreachable() {
+    return this.status === 0;
+  }
+  get frigateUnavailable() {
+    return this.status === 503;
+  }
+}
 
 /** Media URLs always point at our own backend, never at Frigate. */
 export const cameraPreviewUrl = (cameraId: string, height = 360, bust?: number) =>
-  useDemoMedia()
+  DEMO_MODE
     ? demoImageFor(cameraId)
     : apiUrl(`api/cameras/${encodeURIComponent(cameraId)}/preview?h=${height}${bust ? `&t=${bust}` : ""}`);
 
 export const eventThumbnailUrl = (eventId: string, camera?: string) =>
-  useDemoMedia()
-    ? demoImageFor(camera ?? "")
-    : apiUrl(`api/events/${encodeURIComponent(eventId)}/thumbnail`);
+  DEMO_MODE ? demoImageFor(camera ?? "") : apiUrl(`api/events/${encodeURIComponent(eventId)}/thumbnail`);
 
 export const eventSnapshotUrl = (eventId: string, camera?: string) =>
-  useDemoMedia()
-    ? demoImageFor(camera ?? "")
-    : apiUrl(`api/events/${encodeURIComponent(eventId)}/snapshot`);
+  DEMO_MODE ? demoImageFor(camera ?? "") : apiUrl(`api/events/${encodeURIComponent(eventId)}/snapshot`);
 
 export const recordingFrameUrl = (cameraId: string, timestamp: number) =>
-  useDemoMedia()
+  DEMO_MODE
     ? demoImageFor(cameraId)
     : apiUrl(`api/recordings/${encodeURIComponent(cameraId)}/frame/${Math.floor(timestamp)}`);
 
@@ -88,52 +90,75 @@ export const eventVodUrl = (eventId: string) =>
 export const eventClipUrl = (eventId: string) =>
   apiUrl(`api/playback/event/${encodeURIComponent(eventId)}/clip.mp4`);
 
-export const isDemoMode = () => demoMode;
-
-/** Resolves false when no add-on backend is behind this page. */
-export const backendReachable = () => probeBackend();
-
-async function getJson<T>(path: string, fallback: () => T): Promise<T> {
-  // Never issue the real request when the probe already told us there is no
-  // backend: that would produce a stream of failed requests per screen.
-  if (!(await probeBackend())) {
-    demoMode = true;
-    return fallback();
-  }
+/** Cheap liveness check used before opening the SSE stream. */
+export const backendReachable = async () => {
+  if (DEMO_MODE) return false;
   try {
-    const response = await fetch(apiUrl(path), { headers: { accept: "application/json" } });
-    if (!response.ok) throw new Error(String(response.status));
-    demoMode = false;
-    backendUp = true;
-    return (await response.json()) as T;
+    const response = await fetch(apiUrl("api/status"), { headers: { accept: "application/json" } });
+    return response.ok;
   } catch {
-    // No backend reachable (design preview, or add-on still starting):
-    // fall back to demo data so the interface stays explorable.
-    demoMode = true;
-    return fallback();
+    return false;
   }
+};
+
+async function getJson<T>(path: string, demoValue?: () => T): Promise<T> {
+  if (DEMO_MODE && demoValue) return demoValue();
+  let response: Response;
+  try {
+    response = await fetch(apiUrl(path), { headers: { accept: "application/json" } });
+  } catch {
+    throw new ApiError(0, "BACKEND_UNREACHABLE", "The add-on backend is not reachable.");
+  }
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as
+      | { error?: string; message?: string }
+      | null;
+    throw new ApiError(
+      response.status,
+      body?.error ?? `HTTP_${response.status}`,
+      body?.message ?? "The request failed.",
+    );
+  }
+  if (!response.headers.get("content-type")?.includes("json")) {
+    throw new ApiError(0, "BACKEND_UNREACHABLE", "The add-on backend is not reachable.");
+  }
+  return (await response.json()) as T;
+}
+
+async function sendJson<T>(path: string, method: string, body: unknown): Promise<T> {
+  let response: Response;
+  try {
+    response = await fetch(apiUrl(path), {
+      method,
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify(body ?? {}),
+    });
+  } catch {
+    throw new ApiError(0, "BACKEND_UNREACHABLE", "The add-on backend is not reachable.");
+  }
+  const parsed = (await response.json().catch(() => null)) as any;
+  if (!response.ok) {
+    throw new ApiError(
+      response.status,
+      parsed?.error ?? `HTTP_${response.status}`,
+      parsed?.message ?? "The request failed.",
+    );
+  }
+  return parsed as T;
 }
 
 export const api = {
   status: () => getJson<AppStatus>("api/status", demo.status),
   testConnection: async () => {
-    probe = null;
-    if (!(await probeBackend())) return { connected: false, error: "Backend unreachable" };
     try {
-      const response = await fetch(apiUrl("api/status/test"), {
-        method: "POST",
-        headers: { "content-type": "application/json", accept: "application/json" },
-        body: "{}",
-      });
-      return (await response.json()) as { connected: boolean; error?: string };
-    } catch {
-      return { connected: false, error: "Backend unreachable" };
+      return await sendJson<{ connected: boolean; error?: string }>("api/status/test", "POST", {});
+    } catch (error) {
+      return { connected: false, error: (error as ApiError).message };
     }
   },
   diagnostics: () => getJson<Diagnostics>("api/diagnostics", demo.diagnostics),
   cameras: () => getJson<Camera[]>("api/cameras", demo.cameras),
-  camera: (id: string) =>
-    getJson<CameraDetail>(`api/cameras/${encodeURIComponent(id)}`, () => demo.camera(id)),
+  camera: (id: string) => getJson<CameraDetail>(`api/cameras/${encodeURIComponent(id)}`, () => demo.camera(id)),
   labels: () => getJson<string[]>("api/labels", demo.labels),
   events: (params: {
     cameras?: string[];
@@ -150,19 +175,10 @@ export const api = {
     search.set("limit", String(params.limit ?? 25));
     return getJson<DetectionEvent[]>(`api/events?${search.toString()}`, () => demo.events(params));
   },
-  event: (id: string) =>
-    getJson<DetectionEvent | null>(`api/events/${encodeURIComponent(id)}`, () => null),
+  event: (id: string) => getJson<DetectionEvent | null>(`api/events/${encodeURIComponent(id)}`),
   playbackWindow: (camera: string, at: number, windowMs = 300_000) =>
     getJson<PlaybackWindow>(
       `api/playback/${encodeURIComponent(camera)}/window?at=${Math.floor(at)}&window=${Math.floor(windowMs)}`,
-      () => ({
-        camera,
-        available: false,
-        time: at,
-        start: at,
-        end: at + windowMs,
-        playlist: "",
-      }),
     ),
   timeline: (camera: string, after: number, before: number) =>
     getJson<TimelineData>(
@@ -170,30 +186,14 @@ export const api = {
       () => demo.timeline(camera, after, before),
     ),
   session: () =>
-    getJson<{ userName: string | null; preferences: Preferences }>("api/session", demo.session),
-  savePreferences: async (patch: Partial<Preferences>) => {
-    try {
-      const response = await fetch(apiUrl("api/preferences"), {
-        method: "PUT",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(patch),
-      });
-      if (!response.ok) throw new Error("failed");
-      return (await response.json()) as Preferences;
-    } catch {
-      return null;
-    }
-  },
+    getJson<{ userName: string | null; isAdmin?: boolean; preferences: Preferences }>(
+      "api/session",
+      demo.session,
+    ),
+  savePreferences: (patch: Partial<Preferences>) =>
+    sendJson<Preferences>("api/preferences", "PUT", patch),
   exportClip: async (camera: string, start: number, end: number) => {
-    try {
-      const response = await fetch(apiUrl("api/exports"), {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ camera, start, end }),
-      });
-      return response.ok;
-    } catch {
-      return false;
-    }
+    await sendJson("api/exports", "POST", { camera, start, end });
+    return true;
   },
 };

@@ -1,8 +1,16 @@
 import { FRIGATE_CANDIDATES, config } from "../../config.js";
+import { redactText } from "../../security/redact.js";
 
 let resolvedBase: string | null = null;
 let resolvedVia: "configured" | "auto" | null = null;
 let lastError: string | null = null;
+let lastConnectedAt: number | null = null;
+let lastAttemptAt: number | null = null;
+/** Exponential backoff so a Frigate outage is not answered with a probe storm. */
+let failures = 0;
+let nextAttemptAt = 0;
+
+const BACKOFF_MS = [0, 1_000, 2_000, 5_000, 10_000, 20_000, 30_000];
 
 const withTimeout = async (url: string, init: RequestInit = {}, ms = 5000) => {
   const ac = new AbortController();
@@ -23,11 +31,20 @@ const probe = async (base: string) => {
   }
 };
 
-/** Resolve the internal Frigate base URL: configured value first, then discovery. */
+/**
+ * Resolve the internal Frigate base URL: configured value first, then
+ * discovery. Never returned to the browser — only used to build upstream
+ * requests inside this container.
+ */
 export async function resolveFrigateBase(force = false): Promise<string | null> {
   if (resolvedBase && !force) return resolvedBase;
+  // While Frigate is down, respect the backoff window instead of re-probing
+  // every candidate on every request.
+  if (!force && !resolvedBase && Date.now() < nextAttemptAt) return null;
+
   resolvedBase = null;
   resolvedVia = null;
+  lastAttemptAt = Date.now();
 
   const candidates = config.configuredFrigateUrl
     ? [config.configuredFrigateUrl, ...FRIGATE_CANDIDATES]
@@ -38,18 +55,32 @@ export async function resolveFrigateBase(force = false): Promise<string | null> 
       resolvedBase = candidate.replace(/\/$/, "");
       resolvedVia = config.configuredFrigateUrl && i === 0 ? "configured" : "auto";
       lastError = null;
+      lastConnectedAt = Date.now();
+      failures = 0;
+      nextAttemptAt = 0;
       return resolvedBase;
     }
   }
+  failures += 1;
+  nextAttemptAt =
+    Date.now() + (BACKOFF_MS[Math.min(failures, BACKOFF_MS.length - 1)] ?? 30_000);
   lastError = "No reachable Frigate instance found on the internal network.";
   return null;
 }
 
-export const frigateMeta = () => ({ via: resolvedVia, lastError });
+export const frigateMeta = () => ({ via: resolvedVia, lastError, lastConnectedAt, lastAttemptAt });
+
+/** Test seam. */
+export const __resetFrigateClient = () => {
+  resolvedBase = null;
+  resolvedVia = null;
+  failures = 0;
+  nextAttemptAt = 0;
+};
 
 export class FrigateUnavailableError extends Error {
   constructor(message = "Frigate is temporarily unavailable") {
-    super(message);
+    super(redactText(message));
     this.name = "FrigateUnavailableError";
   }
 }
@@ -59,7 +90,7 @@ export async function frigateFetch(path: string, init?: RequestInit, timeoutMs =
   const base = await resolveFrigateBase();
   if (!base) throw new FrigateUnavailableError();
   const res = await withTimeout(`${base}${path}`, init, timeoutMs);
-  if (!res.ok) throw new FrigateUnavailableError(`Frigate returned ${res.status} for ${path}`);
+  if (!res.ok) throw new FrigateUnavailableError(`Frigate returned ${res.status}`);
   return res;
 }
 

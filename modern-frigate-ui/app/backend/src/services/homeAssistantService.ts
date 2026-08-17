@@ -1,6 +1,10 @@
 /**
  * Home Assistant access via the Supervisor proxy. SUPERVISOR_TOKEN never
- * leaves this process and is never sent to the frontend.
+ * leaves this process, is never logged, and is never sent to the frontend.
+ *
+ * User identity is NOT resolved here: identity headers are only meaningful for
+ * a request proven to have arrived through Ingress, which is decided in
+ * `security/ingress.ts`.
  */
 const SUPERVISOR_TOKEN = process.env["SUPERVISOR_TOKEN"] ?? "";
 const CORE_API = "http://supervisor/core/api";
@@ -33,22 +37,3 @@ export const haStatus = async () => {
     timeZone: config?.time_zone as string | undefined,
   };
 };
-
-/**
- * Identity for per-user preferences. Only Ingress-supplied identity is trusted:
- * Supervisor sets `X-Remote-User-Id` on proxied requests. Any other
- * browser-provided header is ignored, and without Supervisor we fall back to a
- * single shared local profile.
- */
-export function resolveUserId(headers: Record<string, unknown>): string {
-  if (!haAvailable()) return "local";
-  const id = headers["x-remote-user-id"];
-  if (typeof id === "string" && /^[a-zA-Z0-9_-]{6,64}$/.test(id)) return id;
-  return "local";
-}
-
-export function resolveUserName(headers: Record<string, unknown>): string | null {
-  if (!haAvailable()) return null;
-  const name = headers["x-remote-user-display-name"];
-  return typeof name === "string" && name.length < 64 ? name : null;
-}
