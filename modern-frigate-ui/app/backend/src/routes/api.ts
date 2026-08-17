@@ -1,5 +1,4 @@
 import type { FastifyInstance } from "fastify";
-import { z } from "zod";
 import { config } from "../config.js";
 import { getCamera, listCameras, listLabels, getFrigateStats } from "../services/frigate/cameras.js";
 import { frigateMeta, resolveFrigateBase, frigateFetch } from "../services/frigate/client.js";
@@ -14,20 +13,24 @@ import { streamOptions } from "../services/frigate/live.js";
 import { cameraPreview, eventSnapshot, eventThumbnail, recordingFrame } from "../services/frigate/media.js";
 import { getTimeline } from "../services/frigate/recordings.js";
 import { eventStream } from "../services/eventStream.js";
-import { haStatus, resolveUserId, resolveUserName } from "../services/homeAssistantService.js";
+import { haStatus } from "../services/homeAssistantService.js";
 import { getPreferences, preferencesSchema, savePreferences } from "../services/preferences.js";
+import { resolveIdentity } from "../security/ingress.js";
+import { limiters } from "../security/rateLimit.js";
+import {
+  cameraId,
+  cameraParams,
+  csvList,
+  epochMs,
+  eventParams,
+  eventQuery,
+  exportBody,
+  HttpError,
+  parseRange,
+} from "../security/validation.js";
 
-const csvList = (value: unknown) =>
-  typeof value === "string" && value.length ? value.split(",").filter(Boolean) : undefined;
-
-const eventQuery = z.object({
-  cameras: z.string().optional(),
-  labels: z.string().optional(),
-  zones: z.string().optional(),
-  after: z.coerce.number().optional(),
-  before: z.coerce.number().optional(),
-  limit: z.coerce.number().min(1).max(100).optional(),
-});
+const unavailable = (reply: any) =>
+  reply.code(503).send({ error: "FRIGATE_UNAVAILABLE", message: "Frigate is not reachable." });
 
 export async function registerApi(app: FastifyInstance) {
   const sendImage = async (
@@ -40,11 +43,11 @@ export async function registerApi(app: FastifyInstance) {
       reply.header("cache-control", image.cacheControl);
       return reply.send(image.body);
     } catch {
-      return reply.code(503).send({ error: "unavailable" });
+      return reply
+        .code(503)
+        .send({ error: "MEDIA_UNAVAILABLE", message: "That image is not available right now." });
     }
   };
-
-  app.get("/api/health", async () => ({ status: "ok", version: config.version }));
 
   /** Frigate reports its version as plain text, not JSON. */
   const frigateVersion = async () =>
@@ -81,24 +84,39 @@ export async function registerApi(app: FastifyInstance) {
     }
 
     return {
-      app: { version: config.version, previewRefreshSeconds: config.previewRefreshSeconds },
+      app: {
+        state: "online" as const,
+        version: config.version,
+        previewRefreshSeconds: config.previewRefreshSeconds,
+      },
       frigate: {
         connected: Boolean(base),
         version,
         cameraCount,
         detectorFps,
+        /** How it was found — never the internal hostname. */
         discoveredVia: meta.via,
+        lastConnectedAt: meta.lastConnectedAt,
+        lastAttemptAt: meta.lastAttemptAt,
         error: base ? undefined : (meta.lastError ?? undefined),
       },
       homeAssistant: await haStatus(),
+      realtime: { provider: eventStream.providerName, pollSeconds: config.eventPollMs / 1000 },
     };
   });
 
   /**
-   * Port + stream health for the Settings screen: which internal ports answer,
-   * how go2rtc is reached, and whether each camera maps to a go2rtc stream.
+   * Troubleshooting detail. Reachability, ports and stream mapping only — no
+   * internal hostnames, no camera credentials. Restricted to Home Assistant
+   * administrators on a trusted Ingress request.
    */
-  app.get("/api/diagnostics", async () => {
+  app.get("/api/diagnostics", { preHandler: limiters.diagnostics }, async (request, reply) => {
+    const identity = resolveIdentity(request);
+    if (config.enforceIngress && !identity.isAdmin) {
+      return reply
+        .code(403)
+        .send({ error: "ADMIN_REQUIRED", message: "Diagnostics are available to administrators." });
+    }
     const go2rtc = await go2rtcDiagnostics();
     const cameras = await listCameras().catch(() => []);
     const streams = await Promise.all(
@@ -114,7 +132,9 @@ export async function registerApi(app: FastifyInstance) {
           port: go2rtc.frigatePort,
           required: true,
           ok: go2rtc.frigateReachable,
-          detail: go2rtc.frigateBase ?? "No reachable Frigate instance",
+          detail: go2rtc.frigateReachable
+            ? "Reachable on the internal add-on network"
+            : "No reachable Frigate instance",
         },
         {
           label: "go2rtc (live video)",
@@ -123,73 +143,100 @@ export async function registerApi(app: FastifyInstance) {
           ok: go2rtc.go2rtcDirect,
           detail: go2rtc.go2rtcDirect
             ? "Direct connection working"
-            : "Port closed — enable it in the Frigate add-on network options for WebRTC/MSE",
+            : "Port closed — enable it in the Frigate add-on network options for MSE/WebRTC",
         },
       ],
       liveVia: go2rtc.via,
       streamCount: go2rtc.streamCount,
       go2rtcStreams: go2rtc.streams,
       cameraStreams: streams,
+      frigate: {
+        reachable: go2rtc.frigateReachable,
+        via: frigateMeta().via,
+        lastConnectedAt: frigateMeta().lastConnectedAt,
+        lastAttemptAt: frigateMeta().lastAttemptAt,
+      },
       go2rtcSuggestion: await buildGo2rtcSuggestion(
         streams.filter((entry) => !entry.matched).map((entry) => entry.camera),
       ),
     };
   });
 
-
-  app.post("/api/status/test", async () => {
+  app.post("/api/status/test", { preHandler: limiters.diagnostics }, async () => {
     const base = await resolveFrigateBase(true);
     return { connected: Boolean(base), via: frigateMeta().via, error: frigateMeta().lastError };
   });
 
-  app.get("/api/session", async (request) => ({
-    userName: resolveUserName(request.headers as Record<string, unknown>),
-    preferences: await getPreferences(resolveUserId(request.headers as Record<string, unknown>)),
-  }));
+  app.get("/api/session", async (request) => {
+    const identity = resolveIdentity(request);
+    return {
+      userName: identity.userName,
+      isAdmin: identity.isAdmin,
+      trustedIngress: identity.trustedIngress,
+      preferences: await getPreferences(identity.userId),
+    };
+  });
 
-  app.put("/api/preferences", async (request, reply) => {
+  app.put("/api/preferences", { preHandler: limiters.writes }, async (request, reply) => {
     const parsed = preferencesSchema.partial().safeParse(request.body);
-    if (!parsed.success) return reply.code(400).send({ error: "invalid preferences" });
-    return savePreferences(resolveUserId(request.headers as Record<string, unknown>), parsed.data);
+    if (!parsed.success) {
+      return reply
+        .code(400)
+        .send({ error: "INVALID_PREFERENCES", message: "Those settings are not valid." });
+    }
+    const identity = resolveIdentity(request);
+    try {
+      return await savePreferences(identity.userId, parsed.data);
+    } catch (error) {
+      // Never report success for a save that did not reach disk.
+      request.log.error({ err: (error as Error).message }, "preferences write failed");
+      return reply
+        .code(500)
+        .send({ error: "PREFERENCES_WRITE_FAILED", message: "Your settings could not be saved." });
+    }
   });
 
   app.get("/api/cameras", async (_request, reply) => {
     try {
       return await listCameras();
     } catch {
-      return reply.code(503).send({ error: "frigate_unavailable" });
+      return unavailable(reply);
     }
   });
 
   app.get<{ Params: { camera: string } }>("/api/cameras/:camera", async (request, reply) => {
-    const camera = await getCamera(request.params.camera).catch(() => null);
-    if (!camera) return reply.code(404).send({ error: "not_found" });
+    const { camera: id } = cameraParams.parse(request.params);
+    const camera = await getCamera(id).catch(() => null);
+    if (!camera) return reply.code(404).send({ error: "NOT_FOUND", message: "Unknown camera." });
     return { ...camera, streams: await streamOptions(camera.id) };
   });
 
   app.get<{ Params: { camera: string }; Querystring: { h?: string } }>(
     "/api/cameras/:camera/preview",
-    (request, reply) =>
-      sendImage(reply, () =>
-        cameraPreview(request.params.camera, Math.min(Number(request.query.h ?? 360) || 360, 720)),
-      ),
+    { preHandler: limiters.snapshots },
+    (request, reply) => {
+      const { camera } = cameraParams.parse(request.params);
+      const height = Math.min(Math.max(Number(request.query.h ?? 360) || 360, 90), 720);
+      return sendImage(reply, () => cameraPreview(camera, height));
+    },
   );
 
   app.get("/api/labels", async (_request, reply) => {
     try {
       return await listLabels();
     } catch {
-      return reply.code(503).send({ error: "frigate_unavailable" });
+      return unavailable(reply);
     }
   });
 
   app.get("/api/events", async (request, reply) => {
-    const parsed = eventQuery.safeParse(request.query);
-    if (!parsed.success) return reply.code(400).send({ error: "invalid query" });
-    const q = parsed.data;
+    const q = eventQuery.parse(request.query);
+    if (q.after !== undefined && q.before !== undefined && !(q.after < q.before)) {
+      throw new HttpError(400, "INVALID_RANGE", "End time must be after start time.");
+    }
     try {
       return await listEvents({
-        cameras: csvList(q.cameras),
+        cameras: csvList(q.cameras, cameraId),
         labels: csvList(q.labels),
         zones: csvList(q.zones),
         after: q.after,
@@ -197,33 +244,38 @@ export async function registerApi(app: FastifyInstance) {
         limit: q.limit,
       });
     } catch {
-      return reply.code(503).send({ error: "frigate_unavailable" });
+      return unavailable(reply);
     }
   });
 
   app.get<{ Params: { id: string } }>("/api/events/:id", async (request, reply) => {
-    const event = await getEvent(request.params.id);
-    if (!event) return reply.code(404).send({ error: "not_found" });
+    const { id } = eventParams.parse(request.params);
+    const event = await getEvent(id);
+    if (!event) return reply.code(404).send({ error: "NOT_FOUND", message: "Unknown event." });
     return event;
   });
 
-  app.get<{ Params: { id: string } }>("/api/events/:id/thumbnail", (request, reply) =>
-    sendImage(reply, () => eventThumbnail(request.params.id)),
+  app.get<{ Params: { id: string } }>(
+    "/api/events/:id/thumbnail",
+    { preHandler: limiters.snapshots },
+    (request, reply) => sendImage(reply, () => eventThumbnail(eventParams.parse(request.params).id)),
   );
 
-  app.get<{ Params: { id: string } }>("/api/events/:id/snapshot", (request, reply) =>
-    sendImage(reply, () => eventSnapshot(request.params.id)),
+  app.get<{ Params: { id: string } }>(
+    "/api/events/:id/snapshot",
+    { preHandler: limiters.snapshots },
+    (request, reply) => sendImage(reply, () => eventSnapshot(eventParams.parse(request.params).id)),
   );
 
   app.get<{ Params: { camera: string }; Querystring: { after?: string; before?: string } }>(
     "/api/timeline/:camera",
     async (request, reply) => {
-      const before = Number(request.query.before) || Date.now();
-      const after = Number(request.query.after) || before - 60 * 60 * 1000;
+      const { camera } = cameraParams.parse(request.params);
+      const { after, before } = parseRange(request.query.after, request.query.before);
       try {
-        return await getTimeline(request.params.camera, after, before);
+        return await getTimeline(camera, after, before);
       } catch {
-        return reply.code(503).send({ error: "frigate_unavailable" });
+        return unavailable(reply);
       }
     },
   );
@@ -231,33 +283,46 @@ export async function registerApi(app: FastifyInstance) {
   app.get<{ Params: { camera: string }; Querystring: { after?: string; before?: string } }>(
     "/api/recordings/:camera",
     async (request, reply) => {
-      const before = Number(request.query.before) || Date.now();
-      const after = Number(request.query.after) || before - 60 * 60 * 1000;
+      const { camera } = cameraParams.parse(request.params);
+      const { after, before } = parseRange(request.query.after, request.query.before);
       try {
-        return (await getTimeline(request.params.camera, after, before)).segments;
+        return (await getTimeline(camera, after, before)).segments;
       } catch {
-        return reply.code(503).send({ error: "frigate_unavailable" });
+        return unavailable(reply);
       }
     },
   );
 
   app.get<{ Params: { camera: string; ts: string } }>(
     "/api/recordings/:camera/frame/:ts",
-    (request, reply) =>
-      sendImage(reply, () => recordingFrame(request.params.camera, Number(request.params.ts))),
+    { preHandler: limiters.snapshots },
+    (request, reply) => {
+      const { camera } = cameraParams.parse(request.params);
+      const ts = epochMs.parse(request.params.ts);
+      return sendImage(reply, () => recordingFrame(camera, ts));
+    },
   );
 
-  app.post<{ Body: unknown }>("/api/exports", async (request, reply) => {
-    const parsed = z
-      .object({ camera: z.string().min(1), start: z.number(), end: z.number() })
-      .safeParse(request.body);
-    if (!parsed.success) return reply.code(400).send({ error: "invalid body" });
-    try {
-      return await requestExport(parsed.data.camera, parsed.data.start, parsed.data.end);
-    } catch {
-      return reply.code(503).send({ error: "frigate_unavailable" });
-    }
-  });
+  app.post<{ Body: unknown }>(
+    "/api/exports",
+    { preHandler: limiters.exports },
+    async (request, reply) => {
+      const parsed = exportBody.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.code(400).send({
+          error: "INVALID_EXPORT",
+          message:
+            parsed.error.issues[0]?.message ??
+            `Exports must be a valid range of at most ${Math.round(config.maxExportSeconds / 60)} minutes.`,
+        });
+      }
+      try {
+        return await requestExport(parsed.data.camera, parsed.data.start, parsed.data.end);
+      } catch {
+        return unavailable(reply);
+      }
+    },
+  );
 
   // Server-Sent Events: realtime detections for the frontend.
   app.get("/api/stream/events", (request, reply) => {
