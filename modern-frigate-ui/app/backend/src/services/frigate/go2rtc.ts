@@ -1,4 +1,5 @@
 import { getFrigateConfig } from "./cameras.js";
+import { redactUrl } from "../../security/redact.js";
 import { resolveFrigateBase } from "./client.js";
 
 export interface Go2rtcTarget {
@@ -123,7 +124,13 @@ function pickInputUrl(inputs: FfmpegInput[]): string | null {
 
 /**
  * Build a paste-ready `go2rtc:` block for every camera that has no matching
- * go2rtc stream, using the camera's own RTSP URLs from Frigate's config.
+ * go2rtc stream.
+ *
+ * The camera RTSP URLs live in Frigate's config and carry camera usernames and
+ * passwords. Those credentials must never reach the browser, so the URL is
+ * redacted server-side before it becomes part of the suggestion: the user gets
+ * the correct structure with host and path intact and re-enters the credential
+ * (or `!secret`) themselves.
  */
 export async function buildGo2rtcSuggestion(cameraIds: string[]) {
   let cfgCameras: Record<string, { ffmpeg?: { inputs?: FfmpegInput[] } }> = {};
@@ -139,7 +146,12 @@ export async function buildGo2rtcSuggestion(cameraIds: string[]) {
     const inputs = cfgCameras[camera]?.ffmpeg?.inputs ?? [];
     const url = pickInputUrl(Array.isArray(inputs) ? inputs : []);
     if (!url) complete = false;
-    return { camera, url: url ?? "rtsp://USER:PASSWORD@CAMERA_IP:554/stream" };
+    return {
+      camera,
+      /** Redacted: never contains a username or password. */
+      url: url ? redactUrl(url) : "rtsp://USER:PASSWORD@CAMERA_IP:554/stream",
+      credentialsRedacted: Boolean(url),
+    };
   });
 
   const yaml = cameras.length
@@ -148,7 +160,7 @@ export async function buildGo2rtcSuggestion(cameraIds: string[]) {
       )
     : "";
 
-  return { cameras, yaml, complete };
+  return { cameras, yaml, complete, credentialsRedacted: true };
 }
 
 /** Port / stream health used by the Settings diagnostics panel. */
@@ -157,7 +169,8 @@ export async function go2rtcDiagnostics() {
   const target = await resolveGo2rtc(true);
   const streams = await listGo2rtcStreams(true);
   return {
-    frigateBase: base,
+    /** Never the internal hostname — only how it was resolved. */
+    frigateVia: base ? "internal-network" : null,
     frigatePort: 5000,
     frigateReachable: Boolean(base),
     go2rtcPort: 1984,
