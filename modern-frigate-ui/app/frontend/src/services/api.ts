@@ -40,8 +40,8 @@ export const socketUrl = (path: string) => {
  * failure.
  */
 export const DEMO_MODE: boolean =
-  (import.meta.env.VITE_DEMO_MODE ?? "") === "true" ||
-  (import.meta.env.VITE_FRIGATE_MOCK ?? "") === "true";
+  (import.meta.env["VITE_DEMO_MODE"] ?? "") === "true" ||
+  (import.meta.env["VITE_FRIGATE_MOCK"] ?? "") === "true";
 
 export const isDemoMode = () => DEMO_MODE;
 
